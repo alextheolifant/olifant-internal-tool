@@ -1,0 +1,26 @@
+{
+  "name": "olifant-platform",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "concurrently --names \"web,api\" --prefix-colors \"cyan,magenta\" \"pnpm dev:web\" \"pnpm dev:api\"",
+    "dev:web": "pnpm --filter @olifant/web dev",
+    "dev:api": "pnpm --filter @olifant/api start:dev",
+    "infra:up": "docker compose -f infra/docker-compose.yml --profile local up -d",
+    "infra:up:no-db": "docker compose -f infra/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker-compose.yml --profile local down",
+    "db:generate": "pnpm --filter @olifant/api db:generate",
+    "db:migrate": "pnpm --filter @olifant/api db:migrate",
+    "db:seed": "pnpm --filter @olifant/api db:seed",
+    "build:web": "pnpm --filter @olifant/web build",
+    "build:api": "pnpm --filter @olifant/api build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3"
+  }
+}

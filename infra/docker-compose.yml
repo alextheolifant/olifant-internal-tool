@@ -1,0 +1,99 @@
+services:
+  # Production uses AWS RDS — this container only starts with: --profile local
+  postgres:
+    image: postgres:16-alpine
+    container_name: olifant-postgres
+    profiles: [local]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: olifant
+      POSTGRES_PASSWORD: olifant_dev
+      POSTGRES_DB: olifant
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U olifant -d olifant"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: olifant-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: olifant-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: olifant
+      CLICKHOUSE_PASSWORD: olifant_dev
+      CLICKHOUSE_DB: olifant
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "8123:8123"   # HTTP interface
+      - "9000:9000"   # Native TCP interface
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user olifant --password olifant_dev --query 'SELECT 1'"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  temporal:
+    image: temporalio/auto-setup:1.24
+    container_name: olifant-temporal
+    profiles: [local]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: olifant
+      POSTGRES_PWD: olifant_dev
+      POSTGRES_SEEDS: postgres
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+    ports:
+      - "7233:7233"   # gRPC frontend
+    volumes:
+      - ./temporal/dynamicconfig/development-sql.yaml:/etc/temporal/config/dynamicconfig/development-sql.yaml
+    healthcheck:
+      test: ["CMD", "temporal", "workflow", "list", "--address", "temporal:7233"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  temporal-ui:
+    image: temporalio/ui:2.26.2
+    container_name: olifant-temporal-ui
+    profiles: [local]
+    restart: unless-stopped
+    depends_on:
+      - temporal
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres_data:
+  redis_data:
+  clickhouse_data:
