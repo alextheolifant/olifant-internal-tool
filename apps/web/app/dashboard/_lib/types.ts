@@ -1,0 +1,72 @@
+// ─── v2 Dashboard domain types ───────────────────────────────────────────────
+
+export type ViewMode = "core" | "full";
+export type DateRange = "7d" | "mtd" | "30d" | "90d";
+export type Marketplace = "ALL" | "US" | "CA" | "MX" | "BR" | "UK" | "DE";
+export type Health = "on_target" | "watch" | "act_now" | "unknown";
+export type ClientStatus = "Active" | "Onboarding" | "Paused" | "Churned";
+export type Tier = 1 | 2 | 3;
+
+export const MARKETPLACE_LABELS: Record<Marketplace, string> = {
+  ALL: "All Markets",
+  US: "United States",
+  CA: "Canada",
+  MX: "Mexico",
+  BR: "Brazil",
+  UK: "United Kingdom",
+  DE: "Germany",
+};
+
+/**
+ * Raw inputs from the API — the atomic source of truth.
+ * orgRev / orgOrd / units are null until SP-API is connected.
+ */
+export interface RawInputs {
+  spend:   number;
+  ppcRev:  number;
+  orgRev:  number | null;   // SP-API
+  ppcOrd:  number;
+  orgOrd:  number | null;   // SP-API
+  clicks:  number;
+  impr:    number;
+  units:   number | null;   // SP-API
+}
+
+/** Metrics derived from RawInputs (never average — always derive from summed raws). */
+export interface DerivedMetrics {
+  revenue:     number | null;   // null when orgRev is null
+  tacos:       number | null;   // null when revenue is null
+  acos:        number;          // Ads API only — always computable
+  roas:        number;          // Ads API only
+  cpc:         number;
+  ctr:         number;
+  cvr:         number;
+  organicPct:  number | null;   // null when orgRev is null
+  totalOrders: number | null;   // null when orgOrd is null
+}
+
+/** Per-marketplace account breakdown (shown in expanded rows). */
+export interface AccountRow extends RawInputs {
+  profileId:    string;
+  marketplace:  string;
+  currencyCode: string;
+  trend:        number[];
+}
+
+/** One row in the main table (aggregated across all/selected marketplace). */
+export interface ClientRow extends RawInputs {
+  id:           string;
+  name:         string;
+  tier:         Tier;
+  status:       ClientStatus;
+  goalRevenue:  number | null;
+  goalTacos:    number | null;
+  trend:        number[];
+  accounts:     AccountRow[];
+}
+
+/** Portfolio-level totals row. */
+export interface Totals extends RawInputs, DerivedMetrics {
+  activeCount: number;
+  totalCount:  number;
+}

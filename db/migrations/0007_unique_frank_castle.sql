@@ -1,0 +1,1 @@
+ALTER TABLE "clients" ADD COLUMN "goal_revenue" numeric(14, 2);

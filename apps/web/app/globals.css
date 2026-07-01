@@ -1,37 +1,73 @@
 @import "tailwindcss";
 
 @theme inline {
-  /* Neutral scale — warm, ink-tinted */
-  --color-neutral-50: #FFFEF9;
-  --color-neutral-100: #F5F1EB;
-  --color-neutral-200: #D1CDC7;
-  --color-neutral-300: #B8B2AC;
-  --color-neutral-400: #A09990;
-  --color-neutral-500: #8A8279;
-  --color-neutral-600: #6B6358;
-  --color-neutral-700: #4A3F35;
-  --color-neutral-800: #2E2218;
-  --color-neutral-900: #19130D;
+  /* ─── Typography ──────────────────────────────────────────────────────── */
+  /* Primary: Hanken Grotesk (approved design). Satoshi as fallback. */
+  --font-sans: 'Hanken Grotesk', 'Satoshi', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
-  /* Brand */
-  --color-brand: #FFD046;
+  /* ─── Neutral scale (warm, ink-tinted) ────────────────────────────────── */
+  --color-neutral-50:  #FFFEF9;   /* surface / cards */
+  --color-neutral-100: #F3F0E7;   /* muted row bg */
+  --color-neutral-150: #EDE9DF;   /* subtle dividers */
+  --color-neutral-200: #E6E0D4;   /* light borders */
+  --color-neutral-300: #BAB3AB;   /* text muted light */
+  --color-neutral-400: #A39A8F;   /* text muted */
+  --color-neutral-500: #70675C;   /* text muted dark */
+  --color-neutral-600: #504840;   /* medium text */
+  --color-neutral-700: #3B352C;   /* text dark */
+  --color-neutral-800: #2E2218;   /* very dark */
+  --color-neutral-900: #19130D;   /* near-black */
 
-  /* Semantic aliases */
-  --color-canvas: #FFFEF9;
-  --color-ink: #19130D;
+  /* ─── Semantic aliases ────────────────────────────────────────────────── */
+  --color-canvas:  #FAF8F1;       /* page background */
+  --color-surface: #FFFEF9;       /* card / panel surfaces */
+  --color-ink:     #0f0b08;       /* primary text, sidebar bg */
 
-  /* Pine accent */
+  /* ─── Brand ───────────────────────────────────────────────────────────── */
+  --color-brand: #ffd046;         /* gold accent */
+
+  /* ─── Pine (green brand) ──────────────────────────────────────────────── */
+  --color-pine-50:  #F1F6EF;
   --color-pine-200: #D0E0C9;
   --color-pine-600: #5B824A;
+  --color-pine-700: #446138;
+  --color-pine-800: #2D4125;
 
-  /* Typography */
-  --font-sans: 'Satoshi', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  /* ─── Health: on-target (green) ───────────────────────────────────────── */
+  --color-green-50:  #F1F9E9;     /* bg */
+  --color-green-400: #40C407;     /* dot */
+  --color-green-700: #2D8C04;     /* text */
+
+  /* ─── Health: watch (amber) ───────────────────────────────────────────── */
+  --color-amber-50:  #FEF5DA;     /* bg light */
+  --color-amber-100: #FEECB7;     /* bg */
+  --color-amber-600: #CC9900;     /* dot */
+  --color-amber-700: #997300;     /* text */
+  --color-amber-800: #664D00;     /* text dark */
+
+  /* ─── Health: act-now (red) ───────────────────────────────────────────── */
+  --color-red-50:  #FFECEA;       /* bg */
+  --color-red-600: #E62415;       /* text + dot */
+
+  /* ─── Status: onboarding (blue) ──────────────────────────────────────── */
+  --color-blue-50:  #CCE3FF;      /* bg */
+  --color-blue-700: #0052B4;      /* text + dot */
+
+  /* ─── Yellow (brand family) ───────────────────────────────────────────── */
+  --color-yellow-200: #FFE699;    /* T2 badge bg */
+  --color-yellow-700: #997300;    /* reuse amber-700 */
+  --color-yellow-800: #664D00;    /* reuse amber-800 */
 }
 
+/* ─── Base ──────────────────────────────────────────────────────────────── */
 body {
-  background-color: #FFFEF9;
-  color: #19130D;
+  background-color: #FAF8F1;
+  color: #0f0b08;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  cursor: pointer;
 }

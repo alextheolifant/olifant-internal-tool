@@ -63,6 +63,7 @@ export const clients = pgTable('clients', {
   status: clientStatusEnum('status').notNull().default('onboarding'),
   tier: clientTierEnum('tier'),
   targetTacos: numeric('target_tacos', { precision: 5, scale: 2 }),
+  goalRevenue: numeric('goal_revenue', { precision: 14, scale: 2 }),
   baseCurrency: varchar('base_currency', { length: 3 })
     .notNull()
     .default('USD'),

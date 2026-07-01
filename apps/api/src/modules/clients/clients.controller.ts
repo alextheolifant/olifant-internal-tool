@@ -2,16 +2,15 @@ import {
   Body,
   Controller,
   Get,
-  HttpCode,
-  HttpStatus,
   Param,
   ParseUUIDPipe,
-  Post,
+  Patch,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ClientsService } from './clients.service';
-import { CreateClientDto } from './dto/create-client.dto';
+import { UpdateClientDto } from './dto/update-client.dto';
 
 @Controller('clients')
 @UseGuards(JwtAuthGuard)
@@ -19,18 +18,16 @@ export class ClientsController {
   constructor(private readonly clientsService: ClientsService) {}
 
   @Get()
-  findAll() {
-    return this.clientsService.findAll();
+  findAll(@Query('marketplace') marketplace?: string) {
+    return this.clientsService.findAll(marketplace);
   }
 
-  @Post()
-  @HttpCode(HttpStatus.CREATED)
-  create(@Body() dto: CreateClientDto) {
-    return this.clientsService.create(dto);
+  @Patch(':id')
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateClientDto,
+  ) {
+    return this.clientsService.update(id, dto);
   }
 
-  @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.clientsService.findOne(id);
-  }
 }
