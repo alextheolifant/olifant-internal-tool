@@ -75,7 +75,7 @@ olifant-platform/
 
 - Node.js ≥ 20
 - pnpm ≥ 9 — `npm install -g pnpm`
-- Go ≥ 1.19
+- Go ≥ 1.19 (`sync-sp-api`); `sync-ads-api` needs Go ≥ 1.21 — see [Go sync services](#go-sync-services)
 - Docker Desktop
 
 ## Getting started
@@ -136,9 +136,28 @@ pnpm infra:down -- -v    # stop containers and wipe volumes
 
 ## Go sync services
 
+> `sync-ads-api`'s `go.mod` requires Go ≥ 1.25 (`pgx/v5`'s dependency). If your default `go` is older, install a side-by-side toolchain once and use it in place of `go` below — it auto-downloads the right version per module via `GOTOOLCHAIN=auto`:
+> ```bash
+> go install golang.org/dl/go1.21.13@latest && $(go env GOPATH)/bin/go1.21.13 download
+> ```
+
+### sync-ads-api — discover & sync Amazon Advertising profiles
+
+Fetches every profile from `GET /v2/profiles`, groups multi-country profiles under one `clients` row by normalized brand name, and upserts `amazon_ads_accounts`. Logs each run to `sync_logs`. Safe to re-run — idempotent, never duplicates or deletes.
+
 ```bash
-cd services/sync-sp-api && go run ./cmd/worker/main.go
-cd services/sync-ads-api && go run ./cmd/worker/main.go
+cd services/sync-ads-api
+export $(grep -v '^#' ../../.env | xargs)
+go1.21.13 run ./cmd/sync-profiles
+```
+
+Requires `ADS_CLIENT_ID`, `ADS_CLIENT_SECRET`, `ADS_REFRESH_TOKEN`, `DATABASE_URL` set in `.env`.
+
+### Workers (Temporal activity hosts — not yet wired up)
+
+```bash
+cd services/sync-sp-api && go run ./cmd/worker
+cd services/sync-ads-api && go1.21.13 run ./cmd/worker
 ```
 
 ## All commands
@@ -179,7 +198,6 @@ Copy `.env.example` to `.env` and fill in the values. Never commit `.env` — us
 | `ADS_CLIENT_ID` | Amazon Advertising API client ID |
 | `ADS_CLIENT_SECRET` | Amazon Advertising API client secret |
 | `ADS_REFRESH_TOKEN` | Per-client refresh token from OAuth consent flow |
-| `ADS_PROFILE_ID` | Amazon Advertising profile ID (from `GET /v2/profiles`) |
 | `AWS_REGION` | AWS region (e.g. `us-east-1`) |
 | `AWS_ACCESS_KEY_ID` | AWS access key — use IAM roles in production |
 | `AWS_SECRET_ACCESS_KEY` | AWS secret key — use IAM roles in production |

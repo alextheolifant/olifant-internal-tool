@@ -32,6 +32,7 @@ export const syncTypeEnum = pgEnum('sync_type', [
   'ads_metrics',
   'sp_orders',
   'sp_inventory',
+  'ads_profiles',
 ]);
 
 export const syncStatusEnum = pgEnum('sync_status', [
@@ -162,9 +163,10 @@ export const syncLogs = pgTable(
   'sync_logs',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    amazonAdsAccountId: uuid('amazon_ads_account_id')
-      .notNull()
-      .references(() => amazonAdsAccounts.id, { onDelete: 'cascade' }),
+    amazonAdsAccountId: uuid('amazon_ads_account_id').references(
+      () => amazonAdsAccounts.id,
+      { onDelete: 'cascade' },
+    ),
     syncType: syncTypeEnum('sync_type').notNull(),
     status: syncStatusEnum('status').notNull().default('pending'),
     startedAt: timestamp('started_at', { withTimezone: true })

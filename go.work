@@ -1,0 +1,6 @@
+go 1.25.11
+
+use (
+	./services/sync-ads-api
+	./services/sync-sp-api
+)
