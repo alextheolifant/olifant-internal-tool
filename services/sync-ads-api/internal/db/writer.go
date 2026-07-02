@@ -154,3 +154,116 @@ func (w *Writer) CompleteSyncFailure(ctx context.Context, logID string, recordsS
 	}
 	return nil
 }
+
+// AdsAccount is a minimal view of amazon_ads_accounts used by sync jobs.
+type AdsAccount struct {
+	ID        string // uuid
+	ProfileID string
+	ClientID  string
+}
+
+// FetchActiveAccounts returns all amazon_ads_accounts rows where is_active = true.
+func (w *Writer) FetchActiveAccounts(ctx context.Context) ([]AdsAccount, error) {
+	rows, err := w.pool.Query(ctx,
+		`SELECT id, profile_id, client_id FROM amazon_ads_accounts WHERE is_active = true ORDER BY profile_id`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("fetch active accounts: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []AdsAccount
+	for rows.Next() {
+		var a AdsAccount
+		if err := rows.Scan(&a.ID, &a.ProfileID, &a.ClientID); err != nil {
+			return nil, fmt.Errorf("scan account row: %w", err)
+		}
+		accounts = append(accounts, a)
+	}
+	return accounts, rows.Err()
+}
+
+// CampaignUpsert holds the fields written to the campaigns table.
+type CampaignUpsert struct {
+	AmazonAdsAccountID string
+	CampaignID         string
+	Name               string
+	State              string
+	Budget             *float64
+	BudgetType         string
+	TargetingType      string
+	StartDate          string // "YYYY-MM-DD" or ""
+	PortfolioID        string
+	BiddingStrategy    string
+	RawData            []byte // JSON
+}
+
+// UpsertCampaign inserts or updates a campaign row keyed on
+// (amazon_ads_account_id, campaign_id).
+func (w *Writer) UpsertCampaign(ctx context.Context, row CampaignUpsert) error {
+	var startDate *string
+	if row.StartDate != "" {
+		startDate = &row.StartDate
+	}
+	var portfolioID *string
+	if row.PortfolioID != "" {
+		portfolioID = &row.PortfolioID
+	}
+	var biddingStrategy *string
+	if row.BiddingStrategy != "" {
+		biddingStrategy = &row.BiddingStrategy
+	}
+	var name *string
+	if row.Name != "" {
+		name = &row.Name
+	}
+	var budgetType *string
+	if row.BudgetType != "" {
+		budgetType = &row.BudgetType
+	}
+	var targetingType *string
+	if row.TargetingType != "" {
+		targetingType = &row.TargetingType
+	}
+
+	_, err := w.pool.Exec(ctx, `
+		INSERT INTO campaigns (
+			amazon_ads_account_id, campaign_id, name, state,
+			budget, budget_type, targeting_type,
+			start_date, portfolio_id, bidding_strategy, raw_data
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (amazon_ads_account_id, campaign_id) DO UPDATE SET
+			name             = EXCLUDED.name,
+			state            = EXCLUDED.state,
+			budget           = EXCLUDED.budget,
+			budget_type      = EXCLUDED.budget_type,
+			targeting_type   = EXCLUDED.targeting_type,
+			start_date       = EXCLUDED.start_date,
+			portfolio_id     = EXCLUDED.portfolio_id,
+			bidding_strategy = EXCLUDED.bidding_strategy,
+			raw_data         = EXCLUDED.raw_data,
+			updated_at       = now()
+	`,
+		row.AmazonAdsAccountID, row.CampaignID, name, row.State,
+		row.Budget, budgetType, targetingType,
+		startDate, portfolioID, biddingStrategy, row.RawData,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert campaign %s: %w", row.CampaignID, err)
+	}
+	return nil
+}
+
+// CountCampaignsForAccount returns the number of campaigns stored for the
+// given amazon_ads_account_id. Used to verify against totalResults from API.
+func (w *Writer) CountCampaignsForAccount(ctx context.Context, accountID string) (int, error) {
+	var count int
+	err := w.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM campaigns WHERE amazon_ads_account_id = $1`,
+		accountID,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count campaigns: %w", err)
+	}
+	return count, nil
+}

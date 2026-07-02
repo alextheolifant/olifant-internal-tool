@@ -10,6 +10,7 @@ import {
   numeric,
   text,
   boolean,
+  jsonb,
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
@@ -112,11 +113,15 @@ export const campaigns = pgTable(
       .notNull()
       .references(() => amazonAdsAccounts.id, { onDelete: 'cascade' }),
     campaignId: varchar('campaign_id', { length: 255 }).notNull(),
-    name: varchar('name', { length: 255 }).notNull(),
+    name: varchar('name', { length: 255 }),
     state: varchar('state', { length: 50 }).notNull(),
     budget: numeric('budget', { precision: 12, scale: 2 }),
     budgetType: varchar('budget_type', { length: 50 }),
     targetingType: varchar('targeting_type', { length: 50 }),
+    startDate: date('start_date'),
+    portfolioId: varchar('portfolio_id', { length: 255 }),
+    biddingStrategy: varchar('bidding_strategy', { length: 100 }),
+    rawData: jsonb('raw_data'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
