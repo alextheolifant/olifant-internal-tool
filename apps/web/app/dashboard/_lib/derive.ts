@@ -64,7 +64,7 @@ export function sumRaw(a: RawInputs, b: RawInputs): RawInputs {
 }
 
 export const ZERO_RAW: RawInputs = {
-  spend: 0, ppcRev: 0, orgRev: 0,
-  ppcOrd: 0, orgOrd: 0,
-  clicks: 0, impr: 0, units: 0,
+  spend: 0, ppcRev: 0, orgRev: null,
+  ppcOrd: 0, orgOrd: null,
+  clicks: 0, impr: 0, units: null,
 };

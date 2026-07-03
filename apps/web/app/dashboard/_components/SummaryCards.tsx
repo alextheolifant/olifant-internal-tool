@@ -1,17 +1,19 @@
-import type { Totals, DateRange } from "../_lib/types";
-import { cur, pct, xfmt, DATE_RANGE_LABELS } from "../_lib/format";
+import type { Totals } from "../_lib/types";
+import { cur, pct, xfmt } from "../_lib/format";
 import { metricColor } from "../_lib/health";
 
 interface SummaryCardsProps {
   totals: Totals;
-  dateRange: DateRange;
+  dateLabel: string;
   isLoading: boolean;
+  currencyCode: string;
+  approx: boolean;
 }
 
 interface CardDef {
   id: string;
   label: string;
-  value: (t: Totals) => string;
+  value: (t: Totals, code: string, approx: boolean) => string;
   colorClass: (t: Totals) => string;
 }
 
@@ -19,13 +21,13 @@ const CARDS: CardDef[] = [
   {
     id: "revenue",
     label: "Revenue",
-    value: (t) => cur(t.revenue),
+    value: (t, c, a) => cur(t.revenue, c, a),
     colorClass: () => "text-ink",
   },
   {
     id: "adSpend",
     label: "Ad Spend",
-    value: (t) => cur(t.spend),
+    value: (t, c, a) => cur(t.spend, c, a),
     colorClass: () => "text-ink",
   },
   {
@@ -54,13 +56,12 @@ const CARDS: CardDef[] = [
   },
 ];
 
-export function SummaryCards({ totals, dateRange, isLoading }: SummaryCardsProps) {
-  const dateLabel = DATE_RANGE_LABELS[dateRange];
+export function SummaryCards({ totals, dateLabel, isLoading, currencyCode, approx }: SummaryCardsProps) {
 
   return (
     <div className="grid grid-cols-2 gap-3 px-5 py-4 sm:grid-cols-3 xl:grid-cols-6">
       {CARDS.map((card) => {
-        const value = card.value(totals);
+        const value = card.value(totals, currencyCode, approx);
         const colorCls = card.colorClass(totals);
 
         return (

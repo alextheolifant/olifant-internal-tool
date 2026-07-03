@@ -30,6 +30,7 @@ export const clientTierEnum = pgEnum('client_tier', ['t1', 't2', 't3']);
 export const syncTypeEnum = pgEnum('sync_type', [
   'ads_campaigns',
   'ads_metrics',
+  'ads_metrics_retry',
   'sp_orders',
   'sp_inventory',
   'ads_profiles',
@@ -90,6 +91,7 @@ export const amazonAdsAccounts = pgTable(
     timezone: varchar('timezone', { length: 100 }),
     accountType: varchar('account_type', { length: 20 }),
     marketplaceStringId: varchar('marketplace_string_id', { length: 50 }),
+    region: varchar('region', { length: 3 }),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -259,6 +261,37 @@ export const amazonSpAccountsRelations = relations(
       references: [clients.id],
     }),
   }),
+);
+
+export const adsReportRequests = pgTable(
+  'ads_report_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    amazonAdsAccountId: uuid('amazon_ads_account_id')
+      .notNull()
+      .references(() => amazonAdsAccounts.id, { onDelete: 'cascade' }),
+    syncLogId: uuid('sync_log_id').references(() => syncLogs.id, {
+      onDelete: 'set null',
+    }),
+    region: varchar('region', { length: 3 }).notNull(),
+    reportId: varchar('report_id', { length: 255 }).notNull(),
+    startDate: date('start_date').notNull(),
+    endDate: date('end_date').notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('PENDING'),
+    retryCount: integer('retry_count').notNull().default(0),
+    requestedAt: timestamp('requested_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    errorMessage: text('error_message'),
+  },
+  (t) => [
+    index('idx_report_req_status').on(t.status),
+    index('idx_report_req_account').on(t.amazonAdsAccountId),
+    // Partial unique index (WHERE status IN ('PENDING','PROCESSING')) is added
+    // manually in the migration — Drizzle doesn't support partial index WHERE clauses.
+  ],
 );
 
 export const loginAuditLogs = pgTable(

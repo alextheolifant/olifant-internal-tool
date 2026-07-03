@@ -9,16 +9,30 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
 	tokenURL    = "https://api.amazon.com/auth/o2/token"
-	profilesURL = "https://advertising-api.amazon.com/v2/profiles"
-
 	maxRetries  = 3
 	baseBackoff = 500 * time.Millisecond
 )
+
+// Region represents one of Amazon's three Advertising API regional endpoints.
+// The same access token works across all three; only the base URL differs.
+type Region struct {
+	Name    string
+	BaseURL string
+}
+
+// Regions is the canonical list used by any sync that must cover all markets.
+// NA covers US/CA/MX/BR; EU covers UK/DE/FR and others; FE covers JP/AU/SG.
+var Regions = []Region{
+	{Name: "na", BaseURL: "https://advertising-api.amazon.com"},
+	{Name: "eu", BaseURL: "https://advertising-api-eu.amazon.com"},
+	{Name: "fe", BaseURL: "https://advertising-api-fe.amazon.com"},
+}
 
 // Client handles communication with the Amazon Advertising API.
 // Implements exponential backoff and retry on rate-limit/transient errors.
@@ -151,11 +165,11 @@ func (c *Client) ExchangeRefreshToken(ctx context.Context) (*TokenResponse, erro
 	})
 }
 
-// ListProfiles fetches every advertising profile accessible to the
-// authenticated developer account.
-func (c *Client) ListProfiles(ctx context.Context, accessToken string) ([]Profile, error) {
+// ListProfiles fetches every advertising profile accessible from one regional
+// endpoint. baseURL is one of the Region.BaseURL values (e.g. Regions[0].BaseURL).
+func (c *Client) ListProfiles(ctx context.Context, accessToken, baseURL string) ([]Profile, error) {
 	return withRetry(ctx, func() ([]Profile, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, profilesURL, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/v2/profiles", nil)
 		if err != nil {
 			return nil, fmt.Errorf("build profiles request: %w", err)
 		}
@@ -186,4 +200,33 @@ func (c *Client) ListProfiles(ctx context.Context, accessToken string) ([]Profil
 		}
 		return profiles, nil
 	})
+}
+
+// TokenManager caches the access token and refreshes it when < 60 s remain.
+// One instance is shared across all three regional base URLs — only one token
+// exchange is needed per run, regardless of how many regions we call.
+type TokenManager struct {
+	client      *Client
+	mu          sync.Mutex
+	accessToken string
+	expiresAt   time.Time
+}
+
+func NewTokenManager(c *Client) *TokenManager {
+	return &TokenManager{client: c}
+}
+
+func (tm *TokenManager) Token(ctx context.Context) (string, error) {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tm.accessToken != "" && time.Until(tm.expiresAt) > 60*time.Second {
+		return tm.accessToken, nil
+	}
+	tok, err := tm.client.ExchangeRefreshToken(ctx)
+	if err != nil {
+		return "", fmt.Errorf("refresh access token: %w", err)
+	}
+	tm.accessToken = tok.AccessToken
+	tm.expiresAt = time.Now().Add(time.Duration(tok.ExpiresIn) * time.Second)
+	return tm.accessToken, nil
 }
