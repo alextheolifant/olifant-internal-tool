@@ -89,41 +89,47 @@ function MetricChart({
 // ── Trend builders ────────────────────────────────────────────────────────────
 
 function buildPortfolioTrend(clients: ClientRow[]) {
-  const len = clients[0]?.trend.length ?? 0;
-  if (len === 0) return { spend: [], tacos: [], acos: [] };
+  // Fix #5: use max length so a shorter-trend client doesn't truncate others
+  const len = Math.max(0, ...clients.map(c => c.trend.length));
+  if (len === 0) return { spend: [], tacos: [], acos: [], tacosAvailable: false };
 
-  const spend = new Array<number>(len).fill(0);
+  const spend    = new Array<number>(len).fill(0);
+  const ppcRev   = new Array<number>(len).fill(0);
+  const totalRev = new Array<number>(len).fill(0);
+  // Fix #2: any client missing SP-API makes portfolio TACoS meaningless
+  let tacosAvailable = true;
 
-  for (const c of clients) {
-    for (let i = 0; i < len; i++) {
-      spend[i] += c.trend[i] ?? 0;
-    }
-  }
-
-  // ACoS/TACoS are estimated — we only store daily spend in trend, not daily revenue.
-  // Apply the period's blended ACoS ratio to approximate the shape.
-  const ppcRev = new Array<number>(len).fill(0);
   for (const c of clients) {
     const d = derive(c);
-    const ratio = d.acos > 0 ? 100 / d.acos : 0;
+    if (d.tacos === null) tacosAvailable = false;
+    const acosRatio  = d.acos  > 0                       ? 100 / d.acos  : 0;
+    const tacosRatio = d.tacos !== null && d.tacos > 0   ? 100 / d.tacos : 0;
     for (let i = 0; i < len; i++) {
-      ppcRev[i] += (c.trend[i] ?? 0) * ratio;
+      const s = c.trend[i] ?? 0;
+      spend[i]    += s;
+      ppcRev[i]   += s * acosRatio;
+      totalRev[i] += s * tacosRatio;
     }
   }
 
-  const tacos = spend.map((s, i) => (ppcRev[i] > 0 ? (s / ppcRev[i]) * 100 : 0));
-  const acos  = spend.map((s, i) => (ppcRev[i] > 0 ? (s / ppcRev[i]) * 100 : 0));
-  return { spend, tacos, acos };
+  const acos  = spend.map((s, i) => (ppcRev[i]   > 0 ? (s / ppcRev[i])   * 100 : 0));
+  const tacos = spend.map((s, i) => (totalRev[i]  > 0 ? (s / totalRev[i]) * 100 : 0));
+  return { spend, tacos, acos, tacosAvailable };
 }
 
 function buildClientTrend(client: ClientRow) {
   const spend = client.trend;
   const d = derive(client);
-  const ratio = d.acos > 0 ? 100 / d.acos : 0;
-  const ppcRev = spend.map((s) => s * ratio);
-  const tacos = spend.map((s, i) => (ppcRev[i] > 0 ? (s / ppcRev[i]) * 100 : 0));
-  const acos  = spend.map((s, i) => (ppcRev[i] > 0 ? (s / ppcRev[i]) * 100 : 0));
-  return { spend, tacos, acos };
+  const tacosAvailable = d.tacos !== null;
+
+  const acosRatio  = d.acos  > 0                       ? 100 / d.acos  : 0;
+  const tacosRatio = d.tacos !== null && d.tacos > 0   ? 100 / d.tacos : 0;
+
+  const ppcRev   = spend.map((s) => s * acosRatio);
+  const totalRev = spend.map((s) => s * tacosRatio);
+  const acos  = spend.map((s, i) => (ppcRev[i]   > 0 ? (s / ppcRev[i])   * 100 : 0));
+  const tacos = spend.map((s, i) => (totalRev[i]  > 0 ? (s / totalRev[i]) * 100 : 0));
+  return { spend, tacos, acos, tacosAvailable };
 }
 
 // ── Tier + status helpers for dropdown ───────────────────────────────────────
@@ -237,12 +243,13 @@ export function TrendsPanel({ clients, onClose }: TrendsPanelProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const selectedClient = clients.find((c) => c.id === selectedId) ?? null;
-  const { spend, tacos, acos } = selectedClient
+  const { spend, tacos, acos, tacosAvailable } = selectedClient
     ? buildClientTrend(selectedClient)
     : buildPortfolioTrend(clients);
 
   const lastSpend = spend[spend.length - 1] ?? 0;
-  const lastTacos = tacos[tacos.length - 1] ?? 0;
+  // Fix #1: use tacosAvailable signal, not the value itself (0 is valid when spend is zero)
+  const lastTacos = tacosAvailable ? (tacos[tacos.length - 1] ?? null) : null;
   const lastAcos  = acos[acos.length - 1] ?? 0;
 
   return (
@@ -283,7 +290,7 @@ export function TrendsPanel({ clients, onClose }: TrendsPanelProps) {
         <MetricChart
           label="TACoS"
           value={pct(lastTacos)}
-          data={tacos}
+          data={tacosAvailable ? tacos : []}
           stroke="#4A3F35"
           fill="rgba(74,63,53,0.08)"
         />
