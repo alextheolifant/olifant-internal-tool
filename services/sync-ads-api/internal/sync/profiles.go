@@ -6,6 +6,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"log"
 	"strconv"
 
 	"olifant/sync-ads-api/internal/amazon"
@@ -23,20 +24,35 @@ func NewOrchestrator(amazonClient *amazon.Client, writer *db.Writer) *Orchestrat
 	return &Orchestrator{amazonClient: amazonClient, writer: writer}
 }
 
+// RegionResult holds the per-region outcome of a profile fetch.
+type RegionResult struct {
+	ProfilesFetched int
+	Failed          bool
+	Error           string
+}
+
 // Result summarizes what a sync run did.
 type Result struct {
 	ProfilesFetched  int
 	AccountsUpserted int
 	ClientsCreated   int
+	ByRegion         map[string]RegionResult
 }
 
-// RunProfilesSync fetches every Amazon Advertising profile accessible to the
-// developer account and upserts it into clients/amazon_ads_accounts.
-// Profiles are processed sequentially (not concurrently) so that two
-// profiles for the same brand reliably resolve to the same client_id within
-// a single run.
+// taggedProfile pairs a profile with the region it came from.
+type taggedProfile struct {
+	profile amazon.Profile
+	region  string
+}
+
+// RunProfilesSync fetches every Amazon Advertising profile across all three
+// Amazon regions (NA, EU, FE) and upserts it into clients/amazon_ads_accounts.
+// If one region's call fails the others still proceed — partial success is
+// recorded. Profiles are processed sequentially (not concurrently) so that
+// two profiles for the same brand reliably resolve to the same client_id
+// within a single run.
 func (o *Orchestrator) RunProfilesSync(ctx context.Context) (Result, error) {
-	var result Result
+	result := Result{ByRegion: make(map[string]RegionResult, len(amazon.Regions))}
 
 	logID, err := o.writer.CreateSyncLog(ctx, syncTypeAdsProfiles)
 	if err != nil {
@@ -52,18 +68,30 @@ func (o *Orchestrator) RunProfilesSync(ctx context.Context) (Result, error) {
 		return result, fmt.Errorf("exchange refresh token: %w", err)
 	}
 
-	profiles, err := o.amazonClient.ListProfiles(ctx, token.AccessToken)
-	if err != nil {
-		o.fail(ctx, logID, result.AccountsUpserted, err)
-		return result, fmt.Errorf("list profiles: %w", err)
+	// Fetch profiles from all three regions; continue on per-region failure.
+	var tagged []taggedProfile
+	for _, r := range amazon.Regions {
+		profiles, fetchErr := o.amazonClient.ListProfiles(ctx, token.AccessToken, r.BaseURL)
+		if fetchErr != nil {
+			log.Printf("region %s: fetch failed: %v", r.Name, fetchErr)
+			result.ByRegion[r.Name] = RegionResult{Failed: true, Error: fetchErr.Error()}
+			continue
+		}
+		log.Printf("region %s: fetched %d profiles", r.Name, len(profiles))
+		result.ByRegion[r.Name] = RegionResult{ProfilesFetched: len(profiles)}
+		for _, p := range profiles {
+			tagged = append(tagged, taggedProfile{profile: p, region: r.Name})
+		}
 	}
-	result.ProfilesFetched = len(profiles)
 
-	for _, p := range profiles {
-		created, err := o.upsertProfile(ctx, p)
+	result.ProfilesFetched = len(tagged)
+
+	// Upsert all collected profiles sequentially.
+	for _, tp := range tagged {
+		created, err := o.upsertProfile(ctx, tp.profile, tp.region)
 		if err != nil {
 			o.fail(ctx, logID, result.AccountsUpserted, err)
-			return result, fmt.Errorf("upsert profile %d: %w", p.ProfileID, err)
+			return result, fmt.Errorf("upsert profile %d: %w", tp.profile.ProfileID, err)
 		}
 		result.AccountsUpserted++
 		if created {
@@ -79,7 +107,7 @@ func (o *Orchestrator) RunProfilesSync(ctx context.Context) (Result, error) {
 
 // upsertProfile resolves the profile's client and writes its ads account
 // row inside one transaction. Returns whether a new client was created.
-func (o *Orchestrator) upsertProfile(ctx context.Context, p amazon.Profile) (bool, error) {
+func (o *Orchestrator) upsertProfile(ctx context.Context, p amazon.Profile, region string) (bool, error) {
 	tx, err := o.writer.BeginTx(ctx)
 	if err != nil {
 		return false, fmt.Errorf("begin tx: %w", err)
@@ -102,6 +130,7 @@ func (o *Orchestrator) upsertProfile(ctx context.Context, p amazon.Profile) (boo
 		Timezone:            p.Timezone,
 		AccountType:         p.AccountInfo.Type,
 		MarketplaceStringID: p.AccountInfo.MarketplaceStringID,
+		Region:              region,
 	})
 	if err != nil {
 		return false, fmt.Errorf("upsert ads account: %w", err)

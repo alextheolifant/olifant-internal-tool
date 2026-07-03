@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import type { ClientRow } from "../_lib/types";
 import { derive } from "../_lib/derive";
 import { cur, pct } from "../_lib/format";
+import { useDateRange } from "../_lib/date-range-context";
 
 interface TrendsPanelProps {
   clients: ClientRow[];
@@ -88,35 +89,40 @@ function MetricChart({
 // ── Trend builders ────────────────────────────────────────────────────────────
 
 function buildPortfolioTrend(clients: ClientRow[]) {
-  const len = 30;
+  const len = clients[0]?.trend.length ?? 0;
+  if (len === 0) return { spend: [], tacos: [], acos: [] };
+
   const spend = new Array<number>(len).fill(0);
-  const ppcRev = new Array<number>(len).fill(0);
 
   for (const c of clients) {
-    const tl = c.trend.length;
     for (let i = 0; i < len; i++) {
-      const idx = tl - len + i;
-      spend[i] += idx >= 0 ? c.trend[idx] : 0;
+      spend[i] += c.trend[i] ?? 0;
     }
+  }
+
+  // ACoS/TACoS are estimated — we only store daily spend in trend, not daily revenue.
+  // Apply the period's blended ACoS ratio to approximate the shape.
+  const ppcRev = new Array<number>(len).fill(0);
+  for (const c of clients) {
     const d = derive(c);
     const ratio = d.acos > 0 ? 100 / d.acos : 0;
     for (let i = 0; i < len; i++) {
-      ppcRev[i] += spend[i] * ratio * 0.9;
+      ppcRev[i] += (c.trend[i] ?? 0) * ratio;
     }
   }
 
   const tacos = spend.map((s, i) => (ppcRev[i] > 0 ? (s / ppcRev[i]) * 100 : 0));
-  const acos  = spend.map((s, i) => (ppcRev[i] > 0 ? (s / ppcRev[i]) * 100 * 1.15 : 0));
+  const acos  = spend.map((s, i) => (ppcRev[i] > 0 ? (s / ppcRev[i]) * 100 : 0));
   return { spend, tacos, acos };
 }
 
 function buildClientTrend(client: ClientRow) {
-  const spend = client.trend.slice(-30);
+  const spend = client.trend;
   const d = derive(client);
   const ratio = d.acos > 0 ? 100 / d.acos : 0;
-  const ppcRev = spend.map((s) => s * ratio * 0.9);
+  const ppcRev = spend.map((s) => s * ratio);
   const tacos = spend.map((s, i) => (ppcRev[i] > 0 ? (s / ppcRev[i]) * 100 : 0));
-  const acos  = spend.map((s, i) => (ppcRev[i] > 0 ? (s / ppcRev[i]) * 100 * 1.15 : 0));
+  const acos  = spend.map((s, i) => (ppcRev[i] > 0 ? (s / ppcRev[i]) * 100 : 0));
   return { spend, tacos, acos };
 }
 
@@ -227,6 +233,7 @@ function ClientDropdown({
 // ── Panel ─────────────────────────────────────────────────────────────────────
 
 export function TrendsPanel({ clients, onClose }: TrendsPanelProps) {
+  const { range } = useDateRange();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const selectedClient = clients.find((c) => c.id === selectedId) ?? null;
@@ -261,7 +268,7 @@ export function TrendsPanel({ clients, onClose }: TrendsPanelProps) {
           selectedId={selectedId}
           onChange={setSelectedId}
         />
-        <p className="mt-1.5 text-[10.5px] text-neutral-400">Daily · last 30 days</p>
+        <p className="mt-1.5 text-[10.5px] text-neutral-400">Daily · {range.label}</p>
       </div>
 
       {/* Charts */}

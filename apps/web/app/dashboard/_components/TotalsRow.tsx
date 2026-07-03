@@ -6,9 +6,11 @@ interface TotalsRowProps {
   totals: Totals;
   viewMode: ViewMode;
   showTrends: boolean;
+  currencyCode: string;
+  approx: boolean;
 }
 
-export function TotalsRow({ totals, viewMode, showTrends }: TotalsRowProps) {
+export function TotalsRow({ totals, viewMode, showTrends, currencyCode, approx }: TotalsRowProps) {
   const cell = `${tableTokens.cellPad} ${tableTokens.numericAlign} ${tableTokens.totalsText} text-[12px]`;
   const nullCell = `${cell} font-normal ${tableTokens.nullText}`;
 
@@ -31,11 +33,11 @@ export function TotalsRow({ totals, viewMode, showTrends }: TotalsRowProps) {
 
       {/* Revenue */}
       <td className={totals.revenue !== null ? cell : nullCell}>
-        {totals.revenue !== null ? cur(totals.revenue) : EM_DASH}
+        {totals.revenue !== null ? cur(totals.revenue, currencyCode, approx) : EM_DASH}
       </td>
 
       {/* Ad Spend */}
-      <td className={cell}>{cur(totals.spend)}</td>
+      <td className={cell}>{cur(totals.spend, currencyCode, approx)}</td>
 
       {/* TACoS */}
       <td className={totals.tacos !== null ? cell : nullCell}>
@@ -55,7 +57,7 @@ export function TotalsRow({ totals, viewMode, showTrends }: TotalsRowProps) {
       <td className={cell}>{pct(totals.cvr, 2)}</td>
 
       {/* CPC */}
-      <td className={cell}>{cur2(totals.cpc)}</td>
+      <td className={cell}>{cur2(totals.cpc, currencyCode, approx)}</td>
 
       {/* CTR */}
       <td className={cell}>{pct(totals.ctr, 2)}</td>
@@ -63,10 +65,10 @@ export function TotalsRow({ totals, viewMode, showTrends }: TotalsRowProps) {
       {/* Full-mode extras */}
       {viewMode === "full" && (
         <>
-          <td className={cell}>{cur(totals.ppcRev)}</td>
+          <td className={cell}>{cur(totals.ppcRev, currencyCode, approx)}</td>
           <td className={cell}>{intfmt(totals.ppcOrd)}</td>
           <td className={totals.orgRev !== null ? cell : nullCell}>
-            {totals.orgRev !== null ? cur(totals.orgRev) : EM_DASH}
+            {totals.orgRev !== null ? cur(totals.orgRev, currencyCode, approx) : EM_DASH}
           </td>
           <td className={totals.orgOrd !== null ? cell : nullCell}>
             {totals.orgOrd !== null ? intfmt(totals.orgOrd) : EM_DASH}

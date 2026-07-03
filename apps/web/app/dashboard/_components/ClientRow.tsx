@@ -4,9 +4,14 @@ import type { ClientRow as IClientRow, ViewMode } from "../_lib/types";
 import { derive } from "../_lib/derive";
 import { deriveHealth, getHealthTokens, metricColor, tacosGoalColor } from "../_lib/health";
 import { tableTokens, tierTokens, statusTokens } from "../_lib/theme";
-import { cur, pct, xfmt, cur2, EM_DASH } from "../_lib/format";
+import { cur, pct, xfmt, cur2, EM_DASH, resolveCurrency } from "../_lib/format";
+import { useMarketplace } from "../_lib/marketplace-context";
 import { Sparkline } from "./Sparkline";
 import { AccountSubRow } from "./AccountSubRow";
+
+function clientCurrency(client: IClientRow, marketplace: string) {
+  return resolveCurrency(client.accounts.map((a) => a.currencyCode));
+}
 
 interface ClientRowProps {
   client: IClientRow;
@@ -18,6 +23,8 @@ interface ClientRowProps {
 }
 
 export function ClientRow({ client, isExpanded, onToggle, onEdit, viewMode, showTrends }: ClientRowProps) {
+  const { marketplace } = useMarketplace();
+  const { code: cc, approx } = clientCurrency(client, marketplace);
   const d = derive(client);
   const health = deriveHealth(d.tacos, client.goalTacos);
   const ht = getHealthTokens(health);
@@ -85,10 +92,10 @@ export function ClientRow({ client, isExpanded, onToggle, onEdit, viewMode, show
         <td className={numCell}>
           {d.revenue !== null ? (
             <div className="flex flex-col items-end">
-              <span className={tableTokens.inkText}>{cur(d.revenue)}</span>
+              <span className={tableTokens.inkText}>{cur(d.revenue, cc, approx)}</span>
               {client.goalRevenue !== null && (
                 <span className="text-[9.5px] text-neutral-400">
-                  Goal {cur(client.goalRevenue)}&nbsp;
+                  Goal {cur(client.goalRevenue, cc)}&nbsp;
                   {d.revenue >= client.goalRevenue ? (
                     <span className="text-green-700">&#x2713;</span>
                   ) : (
@@ -105,7 +112,7 @@ export function ClientRow({ client, isExpanded, onToggle, onEdit, viewMode, show
         </td>
 
         {/* Ad Spend */}
-        <td className={`${numCell} ${tableTokens.inkText}`}>{cur(client.spend)}</td>
+        <td className={`${numCell} ${tableTokens.inkText}`}>{cur(client.spend, cc, approx)}</td>
 
         {/* TACoS — with goal indicator */}
         <td className={`${numCell} min-w-[100px]`}>
@@ -143,7 +150,7 @@ export function ClientRow({ client, isExpanded, onToggle, onEdit, viewMode, show
         <td className={`${numCell} ${metricColor("cvr", d.cvr)}`}>{pct(d.cvr, 2)}</td>
 
         {/* CPC */}
-        <td className={numCell}>{cur2(d.cpc)}</td>
+        <td className={numCell}>{cur2(d.cpc, cc, approx)}</td>
 
         {/* CTR */}
         <td className={`${numCell} ${metricColor("ctr", d.ctr)}`}>{pct(d.ctr, 2)}</td>
@@ -151,11 +158,11 @@ export function ClientRow({ client, isExpanded, onToggle, onEdit, viewMode, show
         {/* Full-mode extra input columns */}
         {viewMode === "full" && (
           <>
-            <td className={`${numCell} ${tableTokens.inkText}`}>{cur(client.ppcRev)}</td>
+            <td className={`${numCell} ${tableTokens.inkText}`}>{cur(client.ppcRev, cc, approx)}</td>
             <td className={`${numCell} ${tableTokens.inkText}`}>{String(client.ppcOrd)}</td>
             <td className={numCell}>
               {client.orgRev !== null ? (
-                <span className={tableTokens.inkText}>{cur(client.orgRev)}</span>
+                <span className={tableTokens.inkText}>{cur(client.orgRev, cc, approx)}</span>
               ) : (
                 <span className={tableTokens.nullText}>{EM_DASH}</span>
               )}

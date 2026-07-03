@@ -1,20 +1,33 @@
 // ─── v2 Dashboard domain types ───────────────────────────────────────────────
 
 export type ViewMode = "core" | "full";
-export type DateRange = "7d" | "mtd" | "30d" | "90d";
-export type Marketplace = "ALL" | "US" | "CA" | "MX" | "BR" | "UK" | "DE";
+export type Marketplace =
+  | "ALL"
+  // North America
+  | "US" | "CA" | "MX" | "BR"
+  // Europe
+  | "UK" | "DE" | "FR" | "ES" | "IT" | "NL" | "BE" | "SE" | "PL" | "TR" | "IE"
+  // Middle East
+  | "AE" | "SA"
+  // Far East / Pacific
+  | "JP" | "AU";
+
 export type Health = "on_target" | "watch" | "act_now" | "unknown";
 export type ClientStatus = "Active" | "Onboarding" | "Paused" | "Churned";
 export type Tier = 1 | 2 | 3;
 
 export const MARKETPLACE_LABELS: Record<Marketplace, string> = {
   ALL: "All Markets",
-  US: "United States",
-  CA: "Canada",
-  MX: "Mexico",
-  BR: "Brazil",
-  UK: "United Kingdom",
-  DE: "Germany",
+  // North America
+  US: "United States", CA: "Canada", MX: "Mexico", BR: "Brazil",
+  // Europe
+  UK: "United Kingdom", DE: "Germany", FR: "France", ES: "Spain",
+  IT: "Italy", NL: "Netherlands", BE: "Belgium", SE: "Sweden",
+  PL: "Poland", TR: "Turkey", IE: "Ireland",
+  // Middle East
+  AE: "United Arab Emirates", SA: "Saudi Arabia",
+  // Far East / Pacific
+  JP: "Japan", AU: "Australia",
 };
 
 /**

@@ -4,7 +4,9 @@ import { useState, useEffect, useCallback, useTransition } from "react";
 import type { ClientRow, ViewMode, Tier, ClientStatus, AccountRow } from "../_lib/types";
 import { computeTotals } from "../_lib/totals";
 import { apiFetch } from "@/lib/api";
+import { resolveCurrency } from "../_lib/format";
 import { useMarketplace } from "../_lib/marketplace-context";
+import { useDateRange } from "../_lib/date-range-context";
 import { TableToolbar } from "./TableToolbar";
 import { SummaryCards } from "./SummaryCards";
 import { ClientTable } from "./ClientTable";
@@ -15,10 +17,17 @@ import { ClientEditPanel, type ClientFormValues } from "./ClientEditPanel";
 
 interface ApiAccount {
   profileId: string;
-  accountName: string | null;
-  marketplace: string | null;
-  countryCode: string | null;
-  currencyCode: string | null;
+  marketplace: string;
+  currencyCode: string;
+  spend: number;
+  ppcRev: number;
+  ppcOrd: number;
+  clicks: number;
+  impr: number;
+  orgRev: number | null;
+  orgOrd: number | null;
+  units: number | null;
+  trend: number[];
 }
 
 interface ApiClient {
@@ -29,22 +38,43 @@ interface ApiClient {
   goalTacos: number | null;
   goalRevenue: number | null;
   marketplaceCount: number;
+  spend: number;
+  ppcRev: number;
+  ppcOrd: number;
+  clicks: number;
+  impr: number;
+  orgRev: number | null;
+  orgOrd: number | null;
+  units: number | null;
+  trend: number[];
   accounts: ApiAccount[];
 }
 
 interface ApiResponse {
+  from: string;
+  to: string;
+  marketplace: string;
   clients: ApiClient[];
-  clientCount: number;
-  activeCount: number;
 }
 
 // ── Mapper: API response → ClientRow[] ───────────────────────────────────────
 
-const ZERO_RAW = {
-  spend: 0, ppcRev: 0, orgRev: null,
-  ppcOrd: 0, orgOrd: null,
-  clicks: 0, impr: 0, units: null,
-};
+function mapApiAccount(a: ApiAccount): AccountRow {
+  return {
+    profileId: a.profileId,
+    marketplace: a.marketplace,
+    currencyCode: a.currencyCode,
+    spend: a.spend,
+    ppcRev: a.ppcRev,
+    orgRev: a.orgRev,
+    ppcOrd: a.ppcOrd,
+    orgOrd: a.orgOrd,
+    clicks: a.clicks,
+    impr: a.impr,
+    units: a.units,
+    trend: a.trend,
+  };
+}
 
 function mapApiClient(c: ApiClient): ClientRow {
   return {
@@ -54,31 +84,32 @@ function mapApiClient(c: ApiClient): ClientRow {
     status: (c.status as ClientStatus) ?? "Active",
     goalTacos: c.goalTacos,
     goalRevenue: c.goalRevenue,
-    trend: [],
-    ...ZERO_RAW,
-    accounts: c.accounts.map((a): AccountRow => ({
-      profileId: a.profileId,
-      marketplace: a.marketplace ?? "",
-      currencyCode: a.currencyCode ?? "",
-      trend: [],
-      ...ZERO_RAW,
-    })),
+    spend: c.spend,
+    ppcRev: c.ppcRev,
+    orgRev: c.orgRev,
+    ppcOrd: c.ppcOrd,
+    orgOrd: c.orgOrd,
+    clicks: c.clicks,
+    impr: c.impr,
+    units: c.units,
+    trend: c.trend,
+    accounts: c.accounts.map(mapApiAccount),
   };
-}
-
-function mapApiResponse(data: ApiResponse): ClientRow[] {
-  return data.clients.map(mapApiClient);
 }
 
 // ── Fetch ─────────────────────────────────────────────────────────────────────
 
-async function fetchClients(marketplace: string): Promise<ClientRow[]> {
-  const qs = new URLSearchParams();
+async function fetchClients(
+  from: string,
+  to: string,
+  marketplace: string,
+): Promise<ClientRow[]> {
+  const qs = new URLSearchParams({ from, to });
   if (marketplace !== "ALL") qs.set("marketplace", marketplace);
-  const res = await apiFetch(`/api/clients?${qs}`, { cache: "no-store" });
+  const res = await apiFetch(`/api/metrics/clients?${qs}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data: ApiResponse = await res.json();
-  return mapApiResponse(data);
+  return data.clients.map(mapApiClient);
 }
 
 // ── Status / Tier maps (form values → API enum strings) ───────────────────────
@@ -92,9 +123,10 @@ const TIER_TO_API: Record<number, string> = { 1: "t1", 2: "t2", 3: "t3" };
 
 export function AllClientsView() {
   const { marketplace } = useMarketplace();
+  const { range } = useDateRange();
 
   const [viewMode, setViewMode]       = useState<ViewMode>("core");
-  const [showTrends, setShowTrends]   = useState(false);
+  const [showTrends, setShowTrends]   = useState(true);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const [clients, setClients]   = useState<ClientRow[]>([]);
@@ -102,14 +134,13 @@ export function AllClientsView() {
   const [error, setError]       = useState<string | null>(null);
   const [, startTransition]     = useTransition();
 
-  // Edit panel state — undefined = closed, ClientRow = editing
   const [editTarget, setEditTarget] = useState<ClientRow | undefined>(undefined);
   const panelOpen = editTarget !== undefined;
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    fetchClients(marketplace)
+    fetchClients(range.from, range.to, marketplace)
       .then((data) => {
         startTransition(() => {
           setClients(data);
@@ -120,10 +151,10 @@ export function AllClientsView() {
         setError(e instanceof Error ? e.message : "Unknown error");
         setLoading(false);
       });
-  }, [marketplace]);
+  }, [marketplace, range.from, range.to]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setExpandedIds(new Set()); }, [marketplace]);
+  useEffect(() => { setExpandedIds(new Set()); }, [marketplace, range.from, range.to]);
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedIds((prev) => {
@@ -133,7 +164,7 @@ export function AllClientsView() {
     });
   }, []);
 
-  // ── Save handler (create + edit) ─────────────────────────────────────────
+  // ── Save handler (PATCH only — create not yet supported) ─────────────────
 
   const handleSave = useCallback(async (values: ClientFormValues) => {
     const body = {
@@ -143,7 +174,6 @@ export function AllClientsView() {
       goalRevenue: values.goalRevenue !== "" ? parseFloat(values.goalRevenue) : null,
     };
 
-    // PATCH — optimistic update then API call
     const id = editTarget!.id;
     const optimistic: ClientRow = {
       ...editTarget!,
@@ -165,19 +195,22 @@ export function AllClientsView() {
         const err = await res.json().catch(() => ({}));
         throw new Error((err as { message?: string }).message ?? `HTTP ${res.status}`);
       }
-      const updated: ApiClient = await res.json();
-      setClients((prev) => prev.map((c) => (c.id === id ? mapApiClient(updated) : c)));
+      // Reload to get fresh metric data after edit
+      load();
     } catch (err) {
       setClients((prev) => prev.map((c) => (c.id === id ? editTarget! : c)));
       throw err;
     }
-  }, [editTarget]);
+  }, [editTarget, load]);
 
   const totals = computeTotals(clients);
+  const { code: portfolioCc, approx: portfolioApprox } = resolveCurrency(
+    clients.flatMap((c) => c.accounts.map((a) => a.currencyCode)),
+  );
 
   return (
     <div className="flex h-full flex-col bg-canvas overflow-auto">
-      <SummaryCards totals={totals} dateRange="7d" isLoading={isLoading} />
+      <SummaryCards totals={totals} dateLabel={range.label} isLoading={isLoading} currencyCode={portfolioCc} approx={portfolioApprox} />
 
       <div className="flex flex-1 items-start gap-4 p-4">
         <div className="flex min-w-0 flex-1 flex-col rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
@@ -194,7 +227,7 @@ export function AllClientsView() {
             isLoading={isLoading}
             error={error}
             viewMode={viewMode}
-            showTrends={true}
+            showTrends={showTrends}
             expandedIds={expandedIds}
             onToggleExpand={toggleExpand}
             onEdit={(client) => setEditTarget(client)}
@@ -203,7 +236,7 @@ export function AllClientsView() {
         </div>
 
         {showTrends && (
-          <div className="w-[296px] shrink-0 rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
+          <div className="w-74 shrink-0 rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
             <TrendsPanel
               clients={clients}
               onClose={() => setShowTrends(false)}

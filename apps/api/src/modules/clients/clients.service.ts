@@ -1,12 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { eq, and, gte, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { DrizzleService } from '../../db/drizzle.service';
-import {
-  clients,
-  amazonAdsAccounts,
-  campaigns,
-  campaignMetricsDaily,
-} from '../../db/schema';
+import { clients, amazonAdsAccounts } from '../../db/schema';
 import { UpdateClientDto } from './dto/update-client.dto';
 
 // ── Tier / status mappers ────────────────────────────────────────────────────

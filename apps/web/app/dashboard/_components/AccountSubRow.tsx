@@ -43,11 +43,11 @@ export function AccountSubRow({ account, viewMode, showTrends }: AccountSubRowPr
 
       {/* Revenue */}
       <td className={cell}>
-        <span className={nullCell(cur(d.revenue))}>{cur(d.revenue)}</span>
+        <span className={nullCell(cur(d.revenue, account.currencyCode))}>{cur(d.revenue, account.currencyCode)}</span>
       </td>
 
       {/* Ad Spend */}
-      <td className={cell}>{cur(account.spend)}</td>
+      <td className={cell}>{cur(account.spend, account.currencyCode)}</td>
 
       {/* TACoS */}
       <td className={cell}>
@@ -69,7 +69,7 @@ export function AccountSubRow({ account, viewMode, showTrends }: AccountSubRowPr
       <td className={`${cell} ${metricColor("cvr", d.cvr)}`}>{pct(d.cvr, 2)}</td>
 
       {/* CPC */}
-      <td className={cell}>{cur2(d.cpc)}</td>
+      <td className={cell}>{cur2(d.cpc, account.currencyCode)}</td>
 
       {/* CTR */}
       <td className={`${cell} ${metricColor("ctr", d.ctr)}`}>{pct(d.ctr, 2)}</td>
@@ -77,10 +77,10 @@ export function AccountSubRow({ account, viewMode, showTrends }: AccountSubRowPr
       {/* Full-mode extra columns */}
       {viewMode === "full" && (
         <>
-          <td className={cell}>{cur(account.ppcRev)}</td>
+          <td className={cell}>{cur(account.ppcRev, account.currencyCode)}</td>
           <td className={cell}>{intfmt(account.ppcOrd)}</td>
           <td className={cell}>
-            <span className={nullCell(cur(account.orgRev))}>{cur(account.orgRev)}</span>
+            <span className={nullCell(cur(account.orgRev, account.currencyCode))}>{cur(account.orgRev, account.currencyCode)}</span>
           </td>
           <td className={cell}>
             <span className={nullCell(intfmt(account.orgOrd))}>{intfmt(account.orgOrd)}</span>

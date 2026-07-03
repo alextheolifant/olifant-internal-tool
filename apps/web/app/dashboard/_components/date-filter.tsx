@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useDateRange } from "../_lib/date-range-context";
 
 const MONTH_NAMES = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -105,6 +106,7 @@ function compareLabel(sel: Selection, key: CompareKey): string {
 }
 
 export default function DateFilter() {
+  const { setRange } = useDateRange();
   const [open, setOpen] = useState(false);
   const [selection, setSelection] = useState<Selection>({ type: "preset", key: "last7" });
   const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear());
@@ -120,6 +122,34 @@ export default function DateFilter() {
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
+
+  // Push resolved from/to into context whenever selection changes
+  useEffect(() => {
+    const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+    let from: Date, to: Date, label: string;
+
+    if (selection.type === "preset") {
+      const p = PRESETS.find((pr) => pr.key === selection.key)!;
+      to   = daysAgo(p.anchor);
+      from = daysAgo(p.anchor + p.days - 1);
+      label = p.label;
+    } else if (selection.type === "month") {
+      const idx = MONTH_NAMES.indexOf(selection.month);
+      from = new Date(selection.year, idx, 1);
+      const lastDay = new Date(selection.year, idx + 1, 0);
+      const today = new Date(); today.setHours(0,0,0,0);
+      to = lastDay < today ? lastDay : today;
+      label = `${selection.month} ${selection.year}`;
+    } else {
+      from = new Date(selection.year, 0, 1);
+      const lastDay = new Date(selection.year, 11, 31);
+      const today = new Date(); today.setHours(0,0,0,0);
+      to = lastDay < today ? lastDay : today;
+      label = `${selection.year}`;
+    }
+
+    setRange({ from: isoDate(from), to: isoDate(to), label });
+  }, [selection, setRange]);
 
   const now = new Date();
   const isFutureMonth = (monthIdx: number, year: number) =>

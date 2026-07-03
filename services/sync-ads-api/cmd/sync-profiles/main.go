@@ -40,6 +40,13 @@ func main() {
 		"sync complete: profiles_fetched=%d accounts_upserted=%d clients_created=%d",
 		result.ProfilesFetched, result.AccountsUpserted, result.ClientsCreated,
 	)
+	for region, r := range result.ByRegion {
+		if r.Failed {
+			log.Printf("  region %s: FAILED — %s", region, r.Error)
+		} else {
+			log.Printf("  region %s: %d profiles", region, r.ProfilesFetched)
+		}
+	}
 }
 
 func requireEnv(key string) string {

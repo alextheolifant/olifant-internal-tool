@@ -8,7 +8,13 @@ import { useMarketplace } from "../_lib/marketplace-context";
 import { MARKETPLACE_LABELS } from "../_lib/types";
 import type { Marketplace } from "../_lib/types";
 
-const MARKETPLACE_OPTIONS: Marketplace[] = ["ALL", "US", "CA", "MX", "BR"];
+const MARKETPLACE_OPTIONS: Marketplace[] = [
+  "ALL",
+  "US", "CA", "MX", "BR",
+  "UK", "DE", "FR", "ES", "IT", "NL", "BE", "SE", "PL", "TR", "IE",
+  "AE", "SA",
+  "JP", "AU",
+];
 
 export default function Header() {
   const pathname = usePathname();

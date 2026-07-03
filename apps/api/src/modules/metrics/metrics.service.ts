@@ -1,4 +1,341 @@
 import { Injectable } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
+import { DrizzleService } from '../../db/drizzle.service';
+import { ClickhouseService } from '../../db/clickhouse.service';
+import { RedisService } from '../../db/redis.service';
+import { amazonAdsAccounts } from '../../db/schema';
+
+// ── Internal types ─────────────────────────────────────────────────────────────
+
+interface ChRow {
+  account_id: string;
+  date: string;
+  spend: number;
+  sales: number;
+  orders: number;
+  clicks: number;
+  impressions: number;
+}
+
+interface DerivedMetrics {
+  revenue: null;
+  tacos: null;
+  organicPct: null;
+  acos: number;
+  roas: number;
+  cpc: number;
+  ctr: number;
+  cvr: number;
+  totalOrders: number;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function deriveMetrics(
+  spend: number,
+  ppcRev: number,
+  ppcOrd: number,
+  clicks: number,
+  impr: number,
+): DerivedMetrics {
+  return {
+    revenue: null,
+    tacos: null,
+    organicPct: null,
+    acos: ppcRev > 0 ? (spend / ppcRev) * 100 : 0,
+    roas: spend > 0 ? ppcRev / spend : 0,
+    cpc: clicks > 0 ? spend / clicks : 0,
+    ctr: impr > 0 ? (clicks / impr) * 100 : 0,
+    cvr: clicks > 0 ? (ppcOrd / clicks) * 100 : 0,
+    totalOrders: ppcOrd,
+  };
+}
+
+function buildDateSeries(from: string, to: string): string[] {
+  const dates: string[] = [];
+  const cur = new Date(from + 'T00:00:00Z');
+  const end = new Date(to + 'T00:00:00Z');
+  while (cur <= end) {
+    dates.push(cur.toISOString().slice(0, 10));
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+const TIER_MAP: Record<string, number> = { t1: 1, t2: 2, t3: 3 };
+const STATUS_MAP: Record<string, string> = {
+  active: 'Active',
+  onboarding: 'Onboarding',
+  paused: 'Paused',
+  churned: 'Churned',
+};
+
+// ── Service ───────────────────────────────────────────────────────────────────
 
 @Injectable()
-export class MetricsService {}
+export class MetricsService {
+  constructor(
+    private readonly drizzle: DrizzleService,
+    private readonly ch: ClickhouseService,
+    private readonly redis: RedisService,
+  ) {}
+
+  async getClientMetrics(from: string, to: string, marketplace?: string) {
+    const mkt =
+      marketplace && marketplace.toUpperCase() !== 'ALL'
+        ? marketplace.toUpperCase()
+        : null;
+
+    const cacheKey = `metrics:clients:v1:${from}:${to}:${mkt ?? 'ALL'}`;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    const result = await this.build(from, to, mkt);
+    await this.redis.setex(cacheKey, 300, JSON.stringify(result));
+    return result;
+  }
+
+  private async build(from: string, to: string, mkt: string | null) {
+    // ── 1. Fetch all clients + active accounts from PG ────────────────────────
+    const clientRows = await this.drizzle.db.query.clients.findMany({
+      with: {
+        amazonAdsAccounts: {
+          where: eq(amazonAdsAccounts.isActive, true),
+        },
+      },
+      orderBy: (c, { asc }) => [asc(c.name)],
+    });
+
+    // ── 2. Filter by marketplace if requested ─────────────────────────────────
+    const filtered = mkt
+      ? clientRows.filter((c) =>
+          c.amazonAdsAccounts.some(
+            (a) => a.countryCode?.toUpperCase() === mkt,
+          ),
+        )
+      : clientRows;
+
+    // ── 3. Build profile_id → { clientId, marketplace, currencyCode } map ────
+    const profileMap = new Map<
+      string,
+      { clientId: string; marketplace: string; currencyCode: string }
+    >();
+    for (const c of filtered) {
+      for (const a of c.amazonAdsAccounts) {
+        if (!mkt || a.countryCode?.toUpperCase() === mkt) {
+          profileMap.set(a.profileId, {
+            clientId: c.id,
+            marketplace: a.marketplace ?? a.countryCode ?? '',
+            currencyCode: a.currencyCode ?? '',
+          });
+        }
+      }
+    }
+
+    // ── 4. Query ClickHouse ───────────────────────────────────────────────────
+    const profileIds = [...profileMap.keys()];
+    const chRows: ChRow[] =
+      profileIds.length > 0
+        ? await this.ch.query<ChRow>(this.buildChQuery(profileIds, from, to))
+        : [];
+
+    // ── 5. Build date series for trends ──────────────────────────────────────
+    const allDates = buildDateSeries(from, to);
+
+    // ── 6. Account-level aggregation ─────────────────────────────────────────
+    interface AccAgg {
+      spend: number;
+      ppcRev: number;
+      ppcOrd: number;
+      clicks: number;
+      impr: number;
+      byDate: Map<string, number>;
+      clientId: string;
+      marketplace: string;
+      currencyCode: string;
+      profileId: string;
+    }
+
+    const accMap = new Map<string, AccAgg>();
+    for (const [profileId, info] of profileMap) {
+      accMap.set(profileId, {
+        spend: 0,
+        ppcRev: 0,
+        ppcOrd: 0,
+        clicks: 0,
+        impr: 0,
+        byDate: new Map(),
+        profileId,
+        ...info,
+      });
+    }
+
+    for (const row of chRows) {
+      const agg = accMap.get(row.account_id);
+      if (!agg) continue;
+      agg.spend += Number(row.spend);
+      agg.ppcRev += Number(row.sales);
+      agg.ppcOrd += Number(row.orders);
+      agg.clicks += Number(row.clicks);
+      agg.impr += Number(row.impressions);
+      const prev = agg.byDate.get(row.date) ?? 0;
+      agg.byDate.set(row.date, prev + Number(row.spend));
+    }
+
+    // ── 7. Client-level aggregation ───────────────────────────────────────────
+    interface ClientAgg {
+      id: string;
+      name: string;
+      tier: string | null;
+      status: string;
+      targetTacos: string | null;
+      goalRevenue: string | null;
+      spend: number;
+      ppcRev: number;
+      ppcOrd: number;
+      clicks: number;
+      impr: number;
+      byDate: Map<string, number>;
+      accountRows: object[];
+    }
+
+    const clientAgg = new Map<string, ClientAgg>();
+    for (const c of filtered) {
+      clientAgg.set(c.id, {
+        id: c.id,
+        name: c.name,
+        tier: c.tier,
+        status: c.status,
+        targetTacos: c.targetTacos,
+        goalRevenue: c.goalRevenue,
+        spend: 0,
+        ppcRev: 0,
+        ppcOrd: 0,
+        clicks: 0,
+        impr: 0,
+        byDate: new Map(),
+        accountRows: [],
+      });
+    }
+
+    for (const [, agg] of accMap) {
+      const client = clientAgg.get(agg.clientId);
+      if (!client) continue;
+
+      const trend = allDates.map((d) => agg.byDate.get(d) ?? 0);
+      const accDerived = deriveMetrics(
+        agg.spend,
+        agg.ppcRev,
+        agg.ppcOrd,
+        agg.clicks,
+        agg.impr,
+      );
+
+      client.accountRows.push({
+        profileId: agg.profileId,
+        marketplace: agg.marketplace,
+        currencyCode: agg.currencyCode,
+        spend: agg.spend,
+        ppcRev: agg.ppcRev,
+        ppcOrd: agg.ppcOrd,
+        clicks: agg.clicks,
+        impr: agg.impr,
+        orgRev: null,
+        orgOrd: null,
+        units: null,
+        ...accDerived,
+        trend,
+      });
+
+      client.spend += agg.spend;
+      client.ppcRev += agg.ppcRev;
+      client.ppcOrd += agg.ppcOrd;
+      client.clicks += agg.clicks;
+      client.impr += agg.impr;
+      for (const [date, spend] of agg.byDate) {
+        client.byDate.set(date, (client.byDate.get(date) ?? 0) + spend);
+      }
+    }
+
+    // ── 8. Build client response rows ─────────────────────────────────────────
+    const clients = [...clientAgg.values()].map((c) => {
+      const trend = allDates.map((d) => c.byDate.get(d) ?? 0);
+      const d = deriveMetrics(c.spend, c.ppcRev, c.ppcOrd, c.clicks, c.impr);
+      return {
+        id: c.id,
+        name: c.name,
+        tier: TIER_MAP[c.tier ?? ''] ?? 3,
+        status: STATUS_MAP[c.status] ?? c.status,
+        goalTacos: c.targetTacos ? parseFloat(c.targetTacos) : null,
+        goalRevenue: c.goalRevenue ? parseFloat(c.goalRevenue) : null,
+        marketplaceCount: (c.accountRows as object[]).length,
+        spend: c.spend,
+        ppcRev: c.ppcRev,
+        ppcOrd: c.ppcOrd,
+        clicks: c.clicks,
+        impr: c.impr,
+        orgRev: null,
+        orgOrd: null,
+        units: null,
+        ...d,
+        trend,
+        accounts: c.accountRows,
+      };
+    });
+
+    // ── 9. Totals — sum raw inputs first, then derive once ────────────────────
+    const raw = clients.reduce(
+      (acc, c) => ({
+        spend: acc.spend + c.spend,
+        ppcRev: acc.ppcRev + c.ppcRev,
+        ppcOrd: acc.ppcOrd + c.ppcOrd,
+        clicks: acc.clicks + c.clicks,
+        impr: acc.impr + c.impr,
+      }),
+      { spend: 0, ppcRev: 0, ppcOrd: 0, clicks: 0, impr: 0 },
+    );
+    const totalsDerived = deriveMetrics(
+      raw.spend,
+      raw.ppcRev,
+      raw.ppcOrd,
+      raw.clicks,
+      raw.impr,
+    );
+    const activeCount = clients.filter((c) => c.status === 'Active').length;
+
+    return {
+      from,
+      to,
+      marketplace: mkt ?? 'ALL',
+      clients,
+      totals: {
+        ...raw,
+        orgRev: null,
+        orgOrd: null,
+        units: null,
+        ...totalsDerived,
+        clientCount: clients.length,
+        activeCount,
+      },
+    };
+  }
+
+  private buildChQuery(profileIds: string[], from: string, to: string): string {
+    const ids = profileIds.map((id) => `'${id}'`).join(',');
+    return `
+      SELECT
+        account_id,
+        toString(date) AS date,
+        toFloat64(SUM(spend))       AS spend,
+        toFloat64(SUM(sales))       AS sales,
+        toUInt64(SUM(orders))       AS orders,
+        toUInt64(SUM(clicks))       AS clicks,
+        toUInt64(SUM(impressions))  AS impressions
+      FROM campaign_metrics
+      WHERE date >= '${from}' AND date <= '${to}'
+        AND account_id IN (${ids})
+      GROUP BY account_id, date
+      ORDER BY account_id, date
+    `;
+  }
+}

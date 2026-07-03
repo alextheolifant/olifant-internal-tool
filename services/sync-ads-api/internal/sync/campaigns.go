@@ -76,7 +76,7 @@ func (o *CampaignOrchestrator) RunCampaignSync(ctx context.Context) (CampaignRes
 }
 
 func (o *CampaignOrchestrator) syncAccount(ctx context.Context, acct db.AdsAccount) (int, error) {
-	accessToken, err := o.tokenManager.AccessToken(ctx)
+	accessToken, err := o.tokenManager.Token(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("get access token: %w", err)
 	}

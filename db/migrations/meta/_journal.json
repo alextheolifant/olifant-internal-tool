@@ -64,6 +64,27 @@
       "when": 1782967287180,
       "tag": "0008_premium_scrambler",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783050955651,
+      "tag": "0008_glossy_sumo",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783053182140,
+      "tag": "0009_high_shen",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1783070186875,
+      "tag": "0010_clever_proteus",
+      "breakpoints": true
     }
   ]
 }

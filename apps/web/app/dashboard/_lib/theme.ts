@@ -88,5 +88,9 @@ export const controlTokens = {
 
 // ── Marketplace display ───────────────────────────────────────────────────────
 export const marketplaceDisplay: Record<string, string> = {
-  US: "US", CA: "CA", MX: "MX", BR: "BR", UK: "UK", DE: "DE",
+  US: "US", CA: "CA", MX: "MX", BR: "BR",
+  UK: "UK", DE: "DE", FR: "FR", ES: "ES", IT: "IT", NL: "NL",
+  BE: "BE", SE: "SE", PL: "PL", TR: "TR", IE: "IE",
+  AE: "AE", SA: "SA",
+  JP: "JP", AU: "AU",
 };
