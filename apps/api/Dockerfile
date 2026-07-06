@@ -9,16 +9,17 @@ COPY packages/ ./packages/
 COPY apps/api/ ./apps/api/
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter api build
-# pnpm deploy creates a self-contained dir with production deps + workspace packages inlined
+# Deploy production deps only (dist copied separately — pnpm deploy skips gitignored files)
 RUN pnpm --filter api --prod deploy --legacy /prod/api
 
 # Production image
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3001
 
-COPY --from=builder /prod/api/dist ./dist
+# Copy dist directly from build output (not via pnpm deploy — it respects .gitignore)
+COPY --from=builder /app/apps/api/dist ./dist
 COPY --from=builder /prod/api/node_modules ./node_modules
 
 EXPOSE 3001
