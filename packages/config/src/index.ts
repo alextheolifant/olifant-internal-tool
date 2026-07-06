@@ -9,8 +9,11 @@ export const apiEnvSchema = baseEnvSchema.extend({
   PORT: z.coerce.number().default(3001),
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
+  CLICKHOUSE_URL: z.string().url(),
   JWT_SECRET: z.string().min(32),
   ANTHROPIC_API_KEY: z.string().startsWith('sk-'),
+  TEMPORAL_ADDRESS: z.string().default('localhost:7233'),
+  TEMPORAL_NAMESPACE: z.string().default('default'),
 });
 
 export const webEnvSchema = baseEnvSchema.extend({

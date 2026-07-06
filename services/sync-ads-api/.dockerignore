@@ -1,0 +1,6 @@
+.env*
+*.log
+cmd/retry-reports
+cmd/sync-campaigns
+cmd/sync-metrics
+cmd/sync-profiles
