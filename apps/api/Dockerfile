@@ -8,9 +8,9 @@ COPY packages/ ./packages/
 COPY apps/api/ ./apps/api/
 RUN pnpm install --frozen-lockfile
 
-# Build from within the api directory so dist lands at /app/apps/api/dist
+# Compile TypeScript directly from api directory
 WORKDIR /app/apps/api
-RUN npx nest build
+RUN /app/node_modules/.bin/tsc -p tsconfig.build.json
 RUN ls -la dist/
 
 FROM node:22-alpine AS runner
