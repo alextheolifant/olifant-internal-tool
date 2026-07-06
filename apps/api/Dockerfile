@@ -8,18 +8,22 @@ COPY packages/ ./packages/
 COPY apps/api/ ./apps/api/
 RUN pnpm install --frozen-lockfile
 
-# Compile TypeScript directly from api directory
-WORKDIR /app/apps/api
-RUN /app/node_modules/.bin/tsc -p tsconfig.build.json
-RUN ls -la dist/
+# Build via pnpm filter so it uses the correct local node_modules/.bin/nest
+RUN pnpm --filter @olifant/api build
+RUN ls -la apps/api/dist/
+
+# Production deps only (strips devDependencies)
+RUN pnpm --filter @olifant/api --prod deploy --legacy /prod/api
 
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3001
 
+# dist comes from the build step (pnpm deploy skips gitignored dist/)
 COPY --from=builder /app/apps/api/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
+# node_modules come from pnpm deploy (production deps only)
+COPY --from=builder /prod/api/node_modules ./node_modules
 
 EXPOSE 3001
 CMD ["node", "dist/main.js"]
