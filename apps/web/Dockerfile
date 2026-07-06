@@ -1,5 +1,5 @@
 FROM node:22-alpine AS base
-RUN corepack enable pnpm
+RUN npm install -g pnpm@10
 
 # Install dependencies (cache layer — only re-runs when lock file changes)
 FROM base AS deps
