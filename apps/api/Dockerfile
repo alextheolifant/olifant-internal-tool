@@ -10,7 +10,7 @@ COPY apps/api/ ./apps/api/
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter api build
 # pnpm deploy creates a self-contained dir with production deps + workspace packages inlined
-RUN pnpm --filter api --prod deploy /prod/api
+RUN pnpm --filter api --prod deploy --legacy /prod/api
 
 # Production image
 FROM node:20-alpine AS runner
