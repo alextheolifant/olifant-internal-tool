@@ -7,10 +7,11 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/ ./packages/
 COPY apps/api/ ./apps/api/
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter api build
-# Debug: show where dist landed
-RUN find /app -name "main.js" -path "*/dist/*" 2>/dev/null || echo "main.js not found anywhere"
-RUN pnpm --filter api --prod deploy --legacy /prod/api
+
+# Build from within the api directory so dist lands at /app/apps/api/dist
+WORKDIR /app/apps/api
+RUN npx nest build
+RUN ls -la dist/
 
 FROM node:22-alpine AS runner
 WORKDIR /app
@@ -18,7 +19,7 @@ ENV NODE_ENV=production
 ENV PORT=3001
 
 COPY --from=builder /app/apps/api/dist ./dist
-COPY --from=builder /prod/api/node_modules ./node_modules
+COPY --from=builder /app/node_modules ./node_modules
 
 EXPOSE 3001
 CMD ["node", "dist/main.js"]
