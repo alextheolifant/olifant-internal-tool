@@ -19,7 +19,7 @@ const (
 
 	phase1Concurrency = 5               // max concurrent report requests in Phase 1
 	phase2Concurrency = 10              // max concurrent poll checks per round
-	pollInterval      = 20 * time.Second
+	pollInterval      = 2 * time.Minute
 	maxWait           = 16 * time.Minute // real reports take ~10 min; give 16 min headroom
 )
 
