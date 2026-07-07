@@ -81,7 +81,8 @@ func (o *CampaignOrchestrator) syncAccount(ctx context.Context, acct db.AdsAccou
 		return 0, fmt.Errorf("get access token: %w", err)
 	}
 
-	campaigns, totalResults, err := o.amazonClient.ListSPCampaigns(ctx, accessToken, acct.ProfileID)
+	baseURL := amazon.RegionBaseURL(acct.Region)
+	campaigns, totalResults, err := o.amazonClient.ListSPCampaigns(ctx, accessToken, acct.ProfileID, baseURL)
 	if err != nil {
 		return 0, fmt.Errorf("list SP campaigns: %w", err)
 	}

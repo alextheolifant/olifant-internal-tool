@@ -34,6 +34,17 @@ var Regions = []Region{
 	{Name: "fe", BaseURL: "https://advertising-api-fe.amazon.com"},
 }
 
+// RegionBaseURL returns the correct API base URL for a region name ('na', 'eu', 'fe').
+// Defaults to NA if the region is unrecognised.
+func RegionBaseURL(region string) string {
+	for _, r := range Regions {
+		if r.Name == region {
+			return r.BaseURL
+		}
+	}
+	return Regions[0].BaseURL
+}
+
 // Client handles communication with the Amazon Advertising API.
 // Implements exponential backoff and retry on rate-limit/transient errors.
 type Client struct {

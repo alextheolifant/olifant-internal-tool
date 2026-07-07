@@ -9,7 +9,7 @@ import (
 	"net/http"
 )
 
-const spCampaignsURL = "https://advertising-api.amazon.com/sp/campaigns/list"
+const spCampaignsPath = "/sp/campaigns/list"
 
 // SPBudget is the nested budget object in the SP campaigns response.
 type SPBudget struct {
@@ -56,7 +56,7 @@ type spCampaignsRequest struct {
 //
 // TODO: add ListSBCampaigns (/sb/campaigns/list) and
 // ListSDCampaigns (/sd/campaigns/list) following the same pattern.
-func (c *Client) ListSPCampaigns(ctx context.Context, accessToken, profileID string) ([]SPCampaign, int, error) {
+func (c *Client) ListSPCampaigns(ctx context.Context, accessToken, profileID, baseURL string) ([]SPCampaign, int, error) {
 	var (
 		all          []SPCampaign
 		totalResults int
@@ -74,7 +74,7 @@ func (c *Client) ListSPCampaigns(ctx context.Context, accessToken, profileID str
 		}
 
 		page, err := withRetry(ctx, func() (*spCampaignsResponse, error) {
-			return c.doSPCampaignsPage(ctx, accessToken, profileID, reqBody)
+			return c.doSPCampaignsPage(ctx, accessToken, profileID, baseURL, reqBody)
 		})
 		if err != nil {
 			return nil, 0, err
@@ -96,13 +96,13 @@ func (c *Client) ListSPCampaigns(ctx context.Context, accessToken, profileID str
 	return all, totalResults, nil
 }
 
-func (c *Client) doSPCampaignsPage(ctx context.Context, accessToken, profileID string, reqBody spCampaignsRequest) (*spCampaignsResponse, error) {
+func (c *Client) doSPCampaignsPage(ctx context.Context, accessToken, profileID, baseURL string, reqBody spCampaignsRequest) (*spCampaignsResponse, error) {
 	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("marshal campaigns request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, spCampaignsURL, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+spCampaignsPath, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("build campaigns request: %w", err)
 	}
