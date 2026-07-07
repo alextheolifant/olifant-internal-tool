@@ -125,7 +125,8 @@ export default function DateFilter() {
 
   // Push resolved from/to into context whenever selection changes
   useEffect(() => {
-    const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+    const isoDate = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     let from: Date, to: Date, label: string;
 
     if (selection.type === "preset") {
