@@ -4,12 +4,11 @@ import type { ClientRow as IClientRow, ViewMode } from "../_lib/types";
 import { derive } from "../_lib/derive";
 import { deriveHealth, getHealthTokens, metricColor, tacosGoalColor } from "../_lib/health";
 import { tableTokens, tierTokens, statusTokens } from "../_lib/theme";
-import { cur, pct, xfmt, cur2, EM_DASH, resolveCurrency } from "../_lib/format";
-import { useMarketplace } from "../_lib/marketplace-context";
+import { cur, pct, xfmt, cur2, intfmt, EM_DASH, resolveCurrency } from "../_lib/format";
 import { Sparkline } from "./Sparkline";
 import { AccountSubRow } from "./AccountSubRow";
 
-function clientCurrency(client: IClientRow, marketplace: string) {
+function clientCurrency(client: IClientRow) {
   return resolveCurrency(client.accounts.map((a) => a.currencyCode));
 }
 
@@ -23,8 +22,7 @@ interface ClientRowProps {
 }
 
 export function ClientRow({ client, isExpanded, onToggle, onEdit, viewMode, showTrends }: ClientRowProps) {
-  const { marketplace } = useMarketplace();
-  const { code: cc, approx } = clientCurrency(client, marketplace);
+  const { code: cc, approx } = clientCurrency(client);
   const d = derive(client);
   const health = deriveHealth(d.tacos, client.goalTacos);
   const ht = getHealthTokens(health);
@@ -159,29 +157,23 @@ export function ClientRow({ client, isExpanded, onToggle, onEdit, viewMode, show
         {viewMode === "full" && (
           <>
             <td className={`${numCell} ${tableTokens.inkText}`}>{cur(client.ppcRev, cc, approx)}</td>
-            <td className={`${numCell} ${tableTokens.inkText}`}>{String(client.ppcOrd)}</td>
+            <td className={`${numCell} ${tableTokens.inkText}`}>{intfmt(client.ppcOrd)}</td>
             <td className={numCell}>
-              {client.orgRev !== null ? (
-                <span className={tableTokens.inkText}>{cur(client.orgRev, cc, approx)}</span>
-              ) : (
-                <span className={tableTokens.nullText}>{EM_DASH}</span>
-              )}
+              <span className={client.orgRev !== null ? tableTokens.inkText : tableTokens.nullText}>
+                {cur(client.orgRev, cc, approx)}
+              </span>
             </td>
             <td className={numCell}>
-              {client.orgOrd !== null ? (
-                <span className={tableTokens.inkText}>{String(client.orgOrd)}</span>
-              ) : (
-                <span className={tableTokens.nullText}>{EM_DASH}</span>
-              )}
+              <span className={client.orgOrd !== null ? tableTokens.inkText : tableTokens.nullText}>
+                {intfmt(client.orgOrd)}
+              </span>
             </td>
-            <td className={`${numCell} ${tableTokens.inkText}`}>{String(client.clicks)}</td>
-            <td className={`${numCell} ${tableTokens.inkText}`}>{String(client.impr)}</td>
+            <td className={`${numCell} ${tableTokens.inkText}`}>{intfmt(client.clicks)}</td>
+            <td className={`${numCell} ${tableTokens.inkText}`}>{intfmt(client.impr)}</td>
             <td className={numCell}>
-              {client.units !== null ? (
-                <span className={tableTokens.inkText}>{String(client.units)}</span>
-              ) : (
-                <span className={tableTokens.nullText}>{EM_DASH}</span>
-              )}
+              <span className={client.units !== null ? tableTokens.inkText : tableTokens.nullText}>
+                {intfmt(client.units)}
+              </span>
             </td>
           </>
         )}

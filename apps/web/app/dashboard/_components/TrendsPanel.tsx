@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import type { ClientRow } from "../_lib/types";
 import { derive } from "../_lib/derive";
 import { cur, pct } from "../_lib/format";
+import { tierTokens, statusTokens, chartColors } from "../_lib/theme";
 import { useDateRange } from "../_lib/date-range-context";
 
 interface TrendsPanelProps {
@@ -89,21 +90,19 @@ function MetricChart({
 // ── Trend builders ────────────────────────────────────────────────────────────
 
 function buildPortfolioTrend(clients: ClientRow[]) {
-  // Fix #5: use max length so a shorter-trend client doesn't truncate others
   const len = Math.max(0, ...clients.map(c => c.trend.length));
   if (len === 0) return { spend: [], tacos: [], acos: [], tacosAvailable: false };
 
   const spend    = new Array<number>(len).fill(0);
   const ppcRev   = new Array<number>(len).fill(0);
   const totalRev = new Array<number>(len).fill(0);
-  // Fix #2: any client missing SP-API makes portfolio TACoS meaningless
   let tacosAvailable = true;
 
   for (const c of clients) {
-    const d = derive(c);
-    if (d.tacos === null) tacosAvailable = false;
-    const acosRatio  = d.acos  > 0                       ? 100 / d.acos  : 0;
-    const tacosRatio = d.tacos !== null && d.tacos > 0   ? 100 / d.tacos : 0;
+    const { acos: dAcos, tacos: dTacos } = derive(c);
+    if (dTacos === null) tacosAvailable = false;
+    const acosRatio  = dAcos  != null && dAcos  > 0 ? 100 / dAcos  : 0;
+    const tacosRatio = dTacos != null && dTacos > 0  ? 100 / dTacos : 0;
     for (let i = 0; i < len; i++) {
       const s = c.trend[i] ?? 0;
       spend[i]    += s;
@@ -119,11 +118,11 @@ function buildPortfolioTrend(clients: ClientRow[]) {
 
 function buildClientTrend(client: ClientRow) {
   const spend = client.trend;
-  const d = derive(client);
-  const tacosAvailable = d.tacos !== null;
+  const { acos: dAcos, tacos: dTacos } = derive(client);
+  const tacosAvailable = dTacos !== null;
 
-  const acosRatio  = d.acos  > 0                       ? 100 / d.acos  : 0;
-  const tacosRatio = d.tacos !== null && d.tacos > 0   ? 100 / d.tacos : 0;
+  const acosRatio  = dAcos  != null && dAcos  > 0 ? 100 / dAcos  : 0;
+  const tacosRatio = dTacos != null && dTacos > 0  ? 100 / dTacos : 0;
 
   const ppcRev   = spend.map((s) => s * acosRatio);
   const totalRev = spend.map((s) => s * tacosRatio);
@@ -131,21 +130,6 @@ function buildClientTrend(client: ClientRow) {
   const tacos = spend.map((s, i) => (totalRev[i]  > 0 ? (s / totalRev[i]) * 100 : 0));
   return { spend, tacos, acos, tacosAvailable };
 }
-
-// ── Tier + status helpers for dropdown ───────────────────────────────────────
-
-const TIER_STYLE: Record<number, { bg: string; text: string }> = {
-  1: { bg: "bg-ink",         text: "text-brand" },
-  2: { bg: "bg-yellow-200",  text: "text-amber-800" },
-  3: { bg: "bg-neutral-200", text: "text-neutral-500" },
-};
-
-const STATUS_DOT: Record<string, string> = {
-  Active:     "bg-green-400",
-  Paused:     "bg-amber-600",
-  Onboarding: "bg-blue-500",
-  Churned:    "bg-red-600",
-};
 
 // ── Client dropdown ───────────────────────────────────────────────────────────
 
@@ -162,19 +146,19 @@ function ClientDropdown({
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!open) return;
     function handler(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  }, [open]);
 
   const selected = clients.find((c) => c.id === selectedId);
   const label = selected ? selected.name : "All Clients";
 
   return (
     <div ref={ref} className="relative">
-      {/* Trigger — full width, blue ring when open */}
       <button
         onClick={() => setOpen((v) => !v)}
         className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-[13px] font-semibold transition-colors ${
@@ -183,7 +167,6 @@ function ClientDropdown({
             : "border-neutral-200 hover:border-neutral-300"
         } bg-surface text-ink`}
       >
-        {/* Target icon */}
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0 text-green-600" aria-hidden="true">
           <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4" />
           <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.4" />
@@ -197,7 +180,6 @@ function ClientDropdown({
 
       {open && (
         <div className="absolute left-0 top-full z-30 mt-1 w-full rounded-xl border border-neutral-200 bg-surface shadow-lg overflow-hidden">
-          {/* All Clients option */}
           <button
             onClick={() => { onChange(null); setOpen(false); }}
             className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors bg-amber-50 hover:bg-amber-100"
@@ -206,11 +188,10 @@ function ClientDropdown({
             <span className="text-[12px] text-neutral-400">· blended</span>
           </button>
 
-          {/* Per-client options */}
           <div className="max-h-56 overflow-y-auto">
             {clients.map((c) => {
-              const tier = TIER_STYLE[c.tier] ?? TIER_STYLE[3];
-              const dot  = STATUS_DOT[c.status] ?? "bg-neutral-400";
+              const tier = tierTokens[c.tier] ?? tierTokens[3];
+              const dot  = statusTokens[c.status]?.dot ?? "bg-neutral-400";
               return (
                 <button
                   key={c.id}
@@ -220,11 +201,9 @@ function ClientDropdown({
                   }`}
                 >
                   <span className="flex-1 truncate text-left">{c.name}</span>
-                  {/* Tier badge */}
                   <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${tier.bg} ${tier.text}`}>
                     T{c.tier}
                   </span>
-                  {/* Status dot */}
                   <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
                 </button>
               );
@@ -248,7 +227,6 @@ export function TrendsPanel({ clients, onClose }: TrendsPanelProps) {
     : buildPortfolioTrend(clients);
 
   const lastSpend = spend[spend.length - 1] ?? 0;
-  // Fix #1: use tacosAvailable signal, not the value itself (0 is valid when spend is zero)
   const lastTacos = tacosAvailable ? (tacos[tacos.length - 1] ?? null) : null;
   const lastAcos  = acos[acos.length - 1] ?? 0;
 
@@ -268,7 +246,7 @@ export function TrendsPanel({ clients, onClose }: TrendsPanelProps) {
         </button>
       </div>
 
-      {/* Scope selector — now a dropdown */}
+      {/* Scope selector */}
       <div className="border-b border-neutral-200 px-4 py-2.5">
         <ClientDropdown
           clients={clients}
@@ -284,22 +262,22 @@ export function TrendsPanel({ clients, onClose }: TrendsPanelProps) {
           label="Ad Spend"
           value={cur(lastSpend)}
           data={spend}
-          stroke="#CC9900"
-          fill="rgba(204,153,0,0.12)"
+          stroke={chartColors.brand.stroke}
+          fill={chartColors.brand.fill}
         />
         <MetricChart
           label="TACoS"
           value={pct(lastTacos)}
           data={tacosAvailable ? tacos : []}
-          stroke="#4A3F35"
-          fill="rgba(74,63,53,0.08)"
+          stroke={chartColors.dark.stroke}
+          fill={chartColors.dark.fill}
         />
         <MetricChart
           label="ACoS"
           value={pct(lastAcos)}
           data={acos}
-          stroke="#4A3F35"
-          fill="rgba(74,63,53,0.08)"
+          stroke={chartColors.dark.stroke}
+          fill={chartColors.dark.fill}
         />
       </div>
     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import type { ClientRow, ViewMode, Totals } from "../_lib/types";
 import { resolveCurrency } from "../_lib/format";
 import { derive } from "../_lib/derive";
@@ -58,10 +58,10 @@ type SortDir = "asc" | "desc";
 function sortedClients(clients: ClientRow[], col: ColDef | null, dir: SortDir): ClientRow[] {
   if (!col?.sortKey) return clients;
   const fn = col.sortKey;
-  return [...clients].sort((a, b) => {
-    const av = fn(a);
-    const bv = fn(b);
-    // Nulls always last regardless of direction
+  // Pre-compute each key once so sort comparisons are O(1)
+  const keyed = clients.map((c) => ({ c, k: fn(c) }));
+  keyed.sort((a, b) => {
+    const av = a.k, bv = b.k;
     if (av === null && bv === null) return 0;
     if (av === null) return 1;
     if (bv === null) return -1;
@@ -70,6 +70,7 @@ function sortedClients(clients: ClientRow[], col: ColDef | null, dir: SortDir): 
       : (av as number) - (bv as number);
     return dir === "asc" ? cmp : -cmp;
   });
+  return keyed.map(({ c }) => c);
 }
 
 // ── Sort icon ─────────────────────────────────────────────────────────────────
@@ -121,11 +122,11 @@ export function ClientTable({
   const [sortCol, setSortCol] = useState<ColDef | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  const visibleCols = [
+  const visibleCols = useMemo(() => [
     ...CORE_COLS.filter((c) => c.showIn.includes(viewMode)),
     ...(viewMode === "full" ? FULL_ONLY_COLS : []),
     ...(showTrends ? [TRENDS_COL] : []),
-  ];
+  ], [viewMode, showTrends]);
 
   function handleSort(col: ColDef) {
     if (!col.sortKey) return;
@@ -137,7 +138,10 @@ export function ClientTable({
     }
   }
 
-  const displayClients = sortedClients(clients, sortCol, sortDir);
+  const displayClients = useMemo(
+    () => sortedClients(clients, sortCol, sortDir),
+    [clients, sortCol, sortDir],
+  );
 
   const thCls = (col: ColDef) =>
     `${tableTokens.cellPad} ${tableTokens.headerText} ${col.minW ?? ""} whitespace-nowrap select-none ${

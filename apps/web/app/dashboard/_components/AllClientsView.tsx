@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useTransition } from "react";
+import { useState, useEffect, useCallback, useMemo, useTransition } from "react";
 import type { ClientRow, ViewMode, Tier, ClientStatus, AccountRow } from "../_lib/types";
 import { computeTotals } from "../_lib/totals";
 import { apiFetch } from "@/lib/api";
@@ -103,10 +103,11 @@ async function fetchClients(
   from: string,
   to: string,
   marketplace: string,
+  signal: AbortSignal,
 ): Promise<ClientRow[]> {
   const qs = new URLSearchParams({ from, to });
   if (marketplace !== "ALL") qs.set("marketplace", marketplace);
-  const res = await apiFetch(`/api/metrics/clients?${qs}`, { cache: "no-store" });
+  const res = await apiFetch(`/api/metrics/clients?${qs}`, { cache: "no-store", signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data: ApiResponse = await res.json();
   return data.clients.map(mapApiClient);
@@ -135,12 +136,16 @@ export function AllClientsView() {
   const [, startTransition]     = useTransition();
 
   const [editTarget, setEditTarget] = useState<ClientRow | undefined>(undefined);
-  const panelOpen = editTarget !== undefined;
 
-  const load = useCallback(() => {
+  // reloadKey lets handleSave trigger a refetch without duplicating the fetch logic
+  const [reloadKey, setReloadKey] = useState(0);
+  const load = useCallback(() => setReloadKey((k) => k + 1), []);
+
+  useEffect(() => {
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
-    fetchClients(range.from, range.to, marketplace)
+    fetchClients(range.from, range.to, marketplace, controller.signal)
       .then((data) => {
         startTransition(() => {
           setClients(data);
@@ -148,12 +153,13 @@ export function AllClientsView() {
         });
       })
       .catch((e) => {
+        if (e instanceof Error && e.name === "AbortError") return;
         setError(e instanceof Error ? e.message : "Unknown error");
         setLoading(false);
       });
-  }, [marketplace, range.from, range.to]);
+    return () => controller.abort();
+  }, [marketplace, range.from, range.to, reloadKey]);
 
-  useEffect(() => { load(); }, [load]);
   useEffect(() => { setExpandedIds(new Set()); }, [marketplace, range.from, range.to]);
 
   const toggleExpand = useCallback((id: string) => {
@@ -163,6 +169,8 @@ export function AllClientsView() {
       return next;
     });
   }, []);
+
+  const handleTrendsToggle = useCallback(() => setShowTrends((v) => !v), []);
 
   // ── Save handler (PATCH only — create not yet supported) ─────────────────
 
@@ -195,17 +203,18 @@ export function AllClientsView() {
         const err = await res.json().catch(() => ({}));
         throw new Error((err as { message?: string }).message ?? `HTTP ${res.status}`);
       }
-      // Reload to get fresh metric data after edit
       load();
     } catch (err) {
+      // editTarget! is safe: captured at call time via useCallback closure
       setClients((prev) => prev.map((c) => (c.id === id ? editTarget! : c)));
       throw err;
     }
   }, [editTarget, load]);
 
-  const totals = computeTotals(clients);
-  const { code: portfolioCc, approx: portfolioApprox } = resolveCurrency(
-    clients.flatMap((c) => c.accounts.map((a) => a.currencyCode)),
+  const totals = useMemo(() => computeTotals(clients), [clients]);
+  const { code: portfolioCc, approx: portfolioApprox } = useMemo(
+    () => resolveCurrency(clients.flatMap((c) => c.accounts.map((a) => a.currencyCode))),
+    [clients],
   );
 
   return (
@@ -219,7 +228,7 @@ export function AllClientsView() {
             viewMode={viewMode}
             showTrends={showTrends}
             onViewChange={setViewMode}
-            onTrendsToggle={() => setShowTrends((v) => !v)}
+            onTrendsToggle={handleTrendsToggle}
           />
           <ClientTable
             clients={clients}
@@ -248,7 +257,7 @@ export function AllClientsView() {
       {editTarget && (
         <ClientEditPanel
           client={editTarget}
-          isOpen={panelOpen}
+          isOpen={true}
           onClose={() => setEditTarget(undefined)}
           onSave={handleSave}
         />

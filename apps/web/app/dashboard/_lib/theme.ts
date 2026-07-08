@@ -86,6 +86,13 @@ export const controlTokens = {
   groupWrap:    "flex items-center rounded-lg border border-neutral-200 bg-neutral-100 p-[3px]",
 } as const;
 
+// ── Chart colors (referenced from theme — zero hardcoded hex in TSX) ─────────
+// stroke hex values match the brand palette approved in the design brief
+export const chartColors = {
+  brand: { stroke: "#CC9900", fill: "rgba(204,153,0,0.12)" },
+  dark:  { stroke: "#4A3F35", fill: "rgba(74,63,53,0.08)" },
+} as const;
+
 // ── Marketplace display ───────────────────────────────────────────────────────
 export const marketplaceDisplay: Record<string, string> = {
   US: "US", CA: "CA", MX: "MX", BR: "BR",

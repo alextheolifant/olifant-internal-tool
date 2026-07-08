@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState } from "react";
 import type { Marketplace } from "./types";
 
 interface MarketplaceContextValue {
@@ -14,12 +14,7 @@ const MarketplaceContext = createContext<MarketplaceContextValue>({
 });
 
 export function MarketplaceProvider({ children }: { children: React.ReactNode }) {
-  const [marketplace, setMarketplaceRaw] = useState<Marketplace>("ALL");
-
-  const setMarketplace = useCallback((m: Marketplace) => {
-    setMarketplaceRaw(m);
-  }, []);
-
+  const [marketplace, setMarketplace] = useState<Marketplace>("ALL");
   return (
     <MarketplaceContext.Provider value={{ marketplace, setMarketplace }}>
       {children}

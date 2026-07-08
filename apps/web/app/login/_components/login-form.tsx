@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { setTokens } from "@/lib/auth";
+import { useAuth } from "@/context/auth-context";
 
 export default function LoginForm() {
   const router = useRouter();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -36,6 +38,7 @@ export default function LoginForm() {
 
       const data = await res.json();
       setTokens(data.accessToken, data.refreshToken);
+      login(data.accessToken);
       router.push("/dashboard");
     } catch {
       setError("Unable to connect. Check your connection and try again.");

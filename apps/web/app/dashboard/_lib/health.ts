@@ -50,10 +50,14 @@ export function metricColor(
       return "text-red-600";
 
     case "organicPct":
-      // Higher organic % = better (less reliant on paid ads)
       if (value >= 30) return "text-green-700";
       if (value >= 10) return "text-neutral-600";
       return "text-neutral-400";
+
+    case "ctr":
+      if (value >= 0.5) return "text-green-700";
+      if (value >= 0.2) return "text-amber-700";
+      return "text-red-600";
 
     default:
       return "text-ink";

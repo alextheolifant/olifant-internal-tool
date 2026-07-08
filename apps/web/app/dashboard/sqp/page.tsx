@@ -1,7 +1,5 @@
+import { PlaceholderPage } from "../_components/PlaceholderPage";
+
 export default function SqpPage() {
-  return (
-    <div className="flex h-full items-center justify-center text-neutral-400 text-sm">
-      SQP — coming soon
-    </div>
-  );
+  return <PlaceholderPage label="SQP" />;
 }

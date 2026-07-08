@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useContext, useState } from "react";
 
 export interface DateRange {
   from: string; // YYYY-MM-DD
@@ -14,7 +14,7 @@ interface DateRangeContextValue {
 }
 
 function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export function defaultRange(): DateRange {
@@ -31,8 +31,7 @@ const DateRangeContext = createContext<DateRangeContextValue>({
 });
 
 export function DateRangeProvider({ children }: { children: React.ReactNode }) {
-  const [range, setRaw] = useState<DateRange>(defaultRange);
-  const setRange = useCallback((r: DateRange) => setRaw(r), []);
+  const [range, setRange] = useState<DateRange>(defaultRange);
   return (
     <DateRangeContext.Provider value={{ range, setRange }}>
       {children}

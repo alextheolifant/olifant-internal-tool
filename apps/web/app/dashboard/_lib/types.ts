@@ -49,11 +49,11 @@ export interface RawInputs {
 export interface DerivedMetrics {
   revenue:     number | null;   // null when orgRev is null
   tacos:       number | null;   // null when revenue is null
-  acos:        number;          // Ads API only — always computable
-  roas:        number;          // Ads API only
-  cpc:         number;
-  ctr:         number;
-  cvr:         number;
+  acos:        number | null;   // null when ppcRev is 0
+  roas:        number | null;   // null when spend is 0
+  cpc:         number | null;   // null when clicks is 0
+  ctr:         number | null;   // null when impr is 0
+  cvr:         number | null;   // null when clicks is 0
   organicPct:  number | null;   // null when orgRev is null
   totalOrders: number | null;   // null when orgOrd is null
 }
