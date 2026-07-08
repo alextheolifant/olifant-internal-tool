@@ -18,7 +18,8 @@ export function setTokens(accessToken: string, refreshToken?: string) {
   localStorage.setItem('access_token', accessToken);
   if (refreshToken) localStorage.setItem('refresh_token', refreshToken);
   const maxAge = 30 * 24 * 60 * 60;
-  document.cookie = `olifant_session=1; path=/; max-age=${maxAge}; SameSite=Strict`;
+  const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `olifant_session=1; path=/; max-age=${maxAge}; SameSite=Strict${secure}`;
 }
 
 export function clearSession() {
