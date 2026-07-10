@@ -5,6 +5,7 @@
   /* Primary: Hanken Grotesk (approved design). Satoshi as fallback. */
   --font-sans: 'Hanken Grotesk', 'Satoshi', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-serif: 'Newsreader', Georgia, serif;
 
   /* ─── Neutral scale (warm, ink-tinted) ────────────────────────────────── */
   --color-neutral-50:  #FFFEF9;   /* surface / cards */

@@ -17,7 +17,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../../.env', '.env'] }),
     ThrottlerModule.forRoot([
       {
         name: 'default',

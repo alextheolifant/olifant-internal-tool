@@ -20,6 +20,10 @@ export default function Header() {
   const pathname = usePathname();
   const { marketplace, setMarketplace } = useMarketplace();
 
+  // Chat has its own single toolbar (title + account selector + user menu) —
+  // showing this global header too would stack two header bars on top of each other.
+  if (pathname.startsWith("/dashboard/chat")) return null;
+
   const activeLabel =
     [...NAV_ITEMS].reverse().find((item) =>
       item.href === "/dashboard" ? pathname === item.href : pathname.startsWith(item.href),

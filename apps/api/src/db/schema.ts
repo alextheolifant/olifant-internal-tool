@@ -44,6 +44,11 @@ export const syncStatusEnum = pgEnum('sync_status', [
   'failed',
 ]);
 
+export const copilotMessageRoleEnum = pgEnum('copilot_message_role', [
+  'user',
+  'assistant',
+]);
+
 // ─── Tables ──────────────────────────────────────────────────────────────────
 
 export const users = pgTable('users', {
@@ -299,6 +304,43 @@ export const adsReportRequests = pgTable(
   ],
 );
 
+export const copilotConversations = pgTable(
+  'copilot_conversations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // null clientId = "All Clients" / agency-wide conversation
+    clientId: uuid('client_id').references(() => clients.id, {
+      onDelete: 'cascade',
+    }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index('idx_copilot_conversations_user').on(t.userId)],
+);
+
+export const copilotMessages = pgTable(
+  'copilot_messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => copilotConversations.id, { onDelete: 'cascade' }),
+    role: copilotMessageRoleEnum('role').notNull(),
+    content: text('content').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index('idx_copilot_messages_conversation').on(t.conversationId)],
+);
+
 export const loginAuditLogs = pgTable(
   'login_audit_logs',
   {
@@ -315,4 +357,29 @@ export const loginAuditLogs = pgTable(
     index('idx_login_audit_email').on(t.email),
     index('idx_login_audit_created_at').on(t.createdAt),
   ],
+);
+
+export const copilotConversationsRelations = relations(
+  copilotConversations,
+  ({ one, many }) => ({
+    client: one(clients, {
+      fields: [copilotConversations.clientId],
+      references: [clients.id],
+    }),
+    user: one(users, {
+      fields: [copilotConversations.userId],
+      references: [users.id],
+    }),
+    messages: many(copilotMessages),
+  }),
+);
+
+export const copilotMessagesRelations = relations(
+  copilotMessages,
+  ({ one }) => ({
+    conversation: one(copilotConversations, {
+      fields: [copilotMessages.conversationId],
+      references: [copilotConversations.id],
+    }),
+  }),
 );

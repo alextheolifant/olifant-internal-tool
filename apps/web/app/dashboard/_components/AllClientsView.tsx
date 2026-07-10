@@ -1,117 +1,18 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useTransition } from "react";
-import type { ClientRow, ViewMode, Tier, ClientStatus, AccountRow } from "../_lib/types";
+import type { ClientRow, ViewMode, ClientStatus } from "../_lib/types";
 import { computeTotals } from "../_lib/totals";
 import { apiFetch } from "@/lib/api";
 import { resolveCurrency } from "../_lib/format";
 import { useMarketplace } from "../_lib/marketplace-context";
 import { useDateRange } from "../_lib/date-range-context";
+import { fetchClients } from "../_lib/clients-api";
 import { TableToolbar } from "./TableToolbar";
 import { SummaryCards } from "./SummaryCards";
 import { ClientTable } from "./ClientTable";
 import { TrendsPanel } from "./TrendsPanel";
 import { ClientEditPanel, type ClientFormValues } from "./ClientEditPanel";
-
-// ── API response types ────────────────────────────────────────────────────────
-
-interface ApiAccount {
-  profileId: string;
-  marketplace: string;
-  currencyCode: string;
-  spend: number;
-  ppcRev: number;
-  ppcOrd: number;
-  clicks: number;
-  impr: number;
-  orgRev: number | null;
-  orgOrd: number | null;
-  units: number | null;
-  trend: number[];
-}
-
-interface ApiClient {
-  id: string;
-  name: string;
-  tier: number;
-  status: string;
-  goalTacos: number | null;
-  goalRevenue: number | null;
-  marketplaceCount: number;
-  spend: number;
-  ppcRev: number;
-  ppcOrd: number;
-  clicks: number;
-  impr: number;
-  orgRev: number | null;
-  orgOrd: number | null;
-  units: number | null;
-  trend: number[];
-  accounts: ApiAccount[];
-}
-
-interface ApiResponse {
-  from: string;
-  to: string;
-  marketplace: string;
-  clients: ApiClient[];
-}
-
-// ── Mapper: API response → ClientRow[] ───────────────────────────────────────
-
-function mapApiAccount(a: ApiAccount): AccountRow {
-  return {
-    profileId: a.profileId,
-    marketplace: a.marketplace,
-    currencyCode: a.currencyCode,
-    spend: a.spend,
-    ppcRev: a.ppcRev,
-    orgRev: a.orgRev,
-    ppcOrd: a.ppcOrd,
-    orgOrd: a.orgOrd,
-    clicks: a.clicks,
-    impr: a.impr,
-    units: a.units,
-    trend: a.trend,
-  };
-}
-
-function mapApiClient(c: ApiClient): ClientRow {
-  return {
-    id: c.id,
-    name: c.name,
-    tier: (c.tier as Tier) ?? 3,
-    status: (c.status as ClientStatus) ?? "Active",
-    goalTacos: c.goalTacos,
-    goalRevenue: c.goalRevenue,
-    spend: c.spend,
-    ppcRev: c.ppcRev,
-    orgRev: c.orgRev,
-    ppcOrd: c.ppcOrd,
-    orgOrd: c.orgOrd,
-    clicks: c.clicks,
-    impr: c.impr,
-    units: c.units,
-    trend: c.trend,
-    accounts: c.accounts.map(mapApiAccount),
-  };
-}
-
-// ── Fetch ─────────────────────────────────────────────────────────────────────
-
-async function fetchClients(
-  from: string,
-  to: string,
-  marketplace: string,
-  signal: AbortSignal,
-): Promise<ClientRow[]> {
-  const qs = new URLSearchParams({ from, to });
-  if (marketplace !== "ALL") qs.set("marketplace", marketplace);
-  const res = await apiFetch(`/api/metrics/clients?${qs}`, { cache: "no-store", signal });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data: ApiResponse = await res.json();
-  return data.clients.map(mapApiClient);
-}
 
 // ── Status / Tier maps (form values → API enum strings) ───────────────────────
 
