@@ -334,6 +334,9 @@ export const copilotMessages = pgTable(
       .references(() => copilotConversations.id, { onDelete: 'cascade' }),
     role: copilotMessageRoleEnum('role').notNull(),
     content: text('content').notNull(),
+    // Anthropic token usage — populated on assistant rows only (null for user rows).
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -346,12 +349,16 @@ export const loginAuditLogs = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     email: varchar('email', { length: 255 }).notNull(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    userId: uuid('user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     ip: varchar('ip', { length: 45 }).notNull(),
     userAgent: varchar('user_agent', { length: 500 }),
     success: boolean('success').notNull(),
     failureReason: varchar('failure_reason', { length: 50 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     index('idx_login_audit_email').on(t.email),

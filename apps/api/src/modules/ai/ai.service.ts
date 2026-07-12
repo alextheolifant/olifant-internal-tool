@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { DrizzleService } from '../../db/drizzle.service';
@@ -11,7 +16,13 @@ const COPILOT_MODEL = 'claude-sonnet-4-6';
 export const COPILOT_SYSTEM_PROMPT =
   "You are the Olifant Digital Co-pilot — a senior Amazon PPC and e-commerce performance strategist embedded in the agency's client dashboard. You have the client's live performance data below. Always answer using the actual numbers; be specific, concise, and immediately actionable. Olifant's methodology is TACoS-first: judge accounts on total ad efficiency against total revenue, and treat rising organic share at flat or falling TACoS as the goal — not just a low ACoS. Write in tight, skimmable sections with short bullets and concrete next steps. Never invent metrics you weren't given. Speak like a sharp operator, not a chatbot.";
 
-const SP_API_PENDING = 'not yet available (Amazon SP-API integration in progress)';
+const SP_API_PENDING =
+  'not yet available (Amazon SP-API integration in progress)';
+
+interface TokenUsage {
+  inputTokens: number | null;
+  outputTokens: number | null;
+}
 
 interface ClientMetricRow {
   id: string;
@@ -48,7 +59,9 @@ interface ClientMetricsResult {
 }
 
 function money(value: number | null): string {
-  return value === null ? SP_API_PENDING : `$${Math.round(value).toLocaleString('en-US')}`;
+  return value === null
+    ? SP_API_PENDING
+    : `$${Math.round(value).toLocaleString('en-US')}`;
 }
 
 function pct(value: number | null): string {
@@ -63,7 +76,10 @@ function defaultDateRange(): { from: string; to: string } {
   const to = new Date();
   const from = new Date(to);
   from.setUTCDate(from.getUTCDate() - 30);
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+  return {
+    from: from.toISOString().slice(0, 10),
+    to: to.toISOString().slice(0, 10),
+  };
 }
 
 @Injectable()
@@ -79,9 +95,16 @@ export class AiService {
     this.anthropic = new Anthropic();
   }
 
-  private async buildCopilotContext(accountId: string, from: string, to: string): Promise<string> {
+  private async buildCopilotContext(
+    accountId: string,
+    from: string,
+    to: string,
+  ): Promise<string> {
     // Reuses the exact aggregation the /metrics/clients endpoint uses — no separate query path.
-    const result = (await this.metricsService.getClientMetrics(from, to)) as ClientMetricsResult;
+    const result = (await this.metricsService.getClientMetrics(
+      from,
+      to,
+    )) as ClientMetricsResult;
     const period = `${from} to ${to}`;
 
     if (accountId === 'all') {
@@ -110,15 +133,27 @@ export class AiService {
     ].join('\n');
   }
 
-  async sendMessage(userId: string, dto: SendCopilotMessageDto): Promise<{ conversationId: string; reply: string }> {
+  /**
+   * Resolves the conversation and builds the full prompt. Runs before any bytes
+   * are written to the response, so failures here still produce a normal Nest
+   * JSON error response instead of a mid-stream one.
+   */
+  async prepareMessage(
+    userId: string,
+    dto: SendCopilotMessageDto,
+  ): Promise<{ conversationId: string; message: string; userContent: string }> {
     const { accountId, message } = dto;
     let conversationId = dto.conversationId;
     let priorTurns: { role: string; content: string }[] = [];
 
     if (conversationId) {
-      const conversation = await this.drizzle.db.query.copilotConversations.findFirst({
-        where: and(eq(copilotConversations.id, conversationId), eq(copilotConversations.userId, userId)),
-      });
+      const conversation =
+        await this.drizzle.db.query.copilotConversations.findFirst({
+          where: and(
+            eq(copilotConversations.id, conversationId),
+            eq(copilotConversations.userId, userId),
+          ),
+        });
       if (!conversation) throw new NotFoundException('Conversation not found');
 
       const rows = await this.drizzle.db.query.copilotMessages.findMany({
@@ -138,7 +173,18 @@ export class AiService {
     }
 
     const { from, to } = defaultDateRange();
-    const context = await this.buildCopilotContext(accountId, from, to);
+    let context: string;
+    try {
+      context = await this.buildCopilotContext(accountId, from, to);
+    } catch (err) {
+      this.logger.error(
+        'Failed to build copilot context',
+        err instanceof Error ? err.stack : err,
+      );
+      throw new ServiceUnavailableException(
+        'The co-pilot is temporarily unavailable. Please try again.',
+      );
+    }
 
     const priorTurnsText = priorTurns
       .map((t) => `${t.role === 'user' ? 'User' : 'Co-pilot'}: ${t.content}`)
@@ -152,39 +198,97 @@ export class AiService {
       .filter(Boolean)
       .join('\n\n');
 
-    let reply: string;
-    try {
-      const response = await this.anthropic.messages.create({
-        model: COPILOT_MODEL,
-        max_tokens: 1500,
-        system: COPILOT_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userContent }],
-      });
+    return { conversationId, message, userContent };
+  }
 
-      if (response.usage) {
-        this.logger.log(
-          `copilot message usage — input: ${response.usage.input_tokens}, output: ${response.usage.output_tokens}`,
-        );
+  /**
+   * Streams the reply as it's generated. Persists the user + assistant turn once
+   * streaming finishes — including a partial assistant reply if the client stopped
+   * generation mid-stream, but nothing at all on a genuine Anthropic failure.
+   */
+  async *streamReply(
+    conversationId: string,
+    message: string,
+    userContent: string,
+    signal: AbortSignal | undefined,
+  ): AsyncGenerator<string, void, unknown> {
+    let reply = '';
+    let usage: TokenUsage = { inputTokens: null, outputTokens: null };
+    try {
+      const stream = this.anthropic.messages.stream(
+        {
+          model: COPILOT_MODEL,
+          max_tokens: 4096,
+          system: COPILOT_SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: userContent }],
+        },
+        { signal },
+      );
+
+      for await (const event of stream) {
+        if (
+          event.type === 'content_block_delta' &&
+          event.delta.type === 'text_delta'
+        ) {
+          reply += event.delta.text;
+          yield event.delta.text;
+        }
       }
 
-      const textBlock = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
-      reply = textBlock?.text ?? '';
+      const finalMessage = await stream.finalMessage();
+      if (finalMessage.usage) {
+        usage = {
+          inputTokens: finalMessage.usage.input_tokens,
+          outputTokens: finalMessage.usage.output_tokens,
+        };
+        this.logger.log(
+          `copilot message usage — input: ${usage.inputTokens}, output: ${usage.outputTokens}`,
+        );
+      }
     } catch (err) {
-      this.logger.error('Anthropic API call failed', err instanceof Error ? err.stack : err);
+      if (signal?.aborted) {
+        // Client hit "Stop" — persist whatever the user actually saw, then stop.
+        // The stream's partial usage (if any) is captured on abort via getUsage().
+        this.logger.log(
+          `Copilot message generation stopped by client (conversation ${conversationId})`,
+        );
+        if (reply)
+          await this.persistTurn(conversationId, message, reply, usage);
+        return;
+      }
+      this.logger.error(
+        'Anthropic API call failed',
+        err instanceof Error ? err.stack : err,
+      );
       // Do not persist a broken assistant message — the frontend has its own fallback UI.
-      throw new ServiceUnavailableException('The co-pilot is temporarily unavailable. Please try again.');
+      throw new ServiceUnavailableException(
+        'The co-pilot is temporarily unavailable. Please try again.',
+      );
     }
 
+    await this.persistTurn(conversationId, message, reply, usage);
+  }
+
+  private async persistTurn(
+    conversationId: string,
+    message: string,
+    reply: string,
+    usage: TokenUsage,
+  ): Promise<void> {
     await this.drizzle.db.insert(copilotMessages).values([
       { conversationId, role: 'user', content: message },
-      { conversationId, role: 'assistant', content: reply },
+      {
+        conversationId,
+        role: 'assistant',
+        content: reply,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+      },
     ]);
     await this.drizzle.db
       .update(copilotConversations)
       .set({ updatedAt: new Date() })
       .where(eq(copilotConversations.id, conversationId));
-
-    return { conversationId, reply };
   }
 
   async listConversations(userId: string, accountId?: string) {
@@ -195,17 +299,22 @@ export class AiService {
       conditions.push(eq(copilotConversations.clientId, accountId));
     }
 
-    const conversations = await this.drizzle.db.query.copilotConversations.findMany({
-      where: and(...conditions),
-      orderBy: (c, { desc }) => [desc(c.updatedAt)],
-    });
+    const conversations =
+      await this.drizzle.db.query.copilotConversations.findMany({
+        where: and(...conditions),
+        orderBy: (c, { desc }) => [desc(c.updatedAt)],
+      });
 
     return Promise.all(
       conversations.map(async (c) => {
-        const firstMessage = await this.drizzle.db.query.copilotMessages.findFirst({
-          where: and(eq(copilotMessages.conversationId, c.id), eq(copilotMessages.role, 'user')),
-          orderBy: (m) => [asc(m.createdAt)],
-        });
+        const firstMessage =
+          await this.drizzle.db.query.copilotMessages.findFirst({
+            where: and(
+              eq(copilotMessages.conversationId, c.id),
+              eq(copilotMessages.role, 'user'),
+            ),
+            orderBy: (m) => [asc(m.createdAt)],
+          });
         return {
           id: c.id,
           accountId: c.clientId ?? 'all',
@@ -215,5 +324,28 @@ export class AiService {
         };
       }),
     );
+  }
+
+  async getConversationMessages(userId: string, conversationId: string) {
+    const conversation =
+      await this.drizzle.db.query.copilotConversations.findFirst({
+        where: and(
+          eq(copilotConversations.id, conversationId),
+          eq(copilotConversations.userId, userId),
+        ),
+      });
+    if (!conversation) throw new NotFoundException('Conversation not found');
+
+    const rows = await this.drizzle.db.query.copilotMessages.findMany({
+      where: eq(copilotMessages.conversationId, conversationId),
+      orderBy: (m, { asc: ascOrder }) => [ascOrder(m.createdAt)],
+    });
+
+    return rows.map((r) => ({
+      id: r.id,
+      role: r.role,
+      content: r.content,
+      createdAt: r.createdAt,
+    }));
   }
 }

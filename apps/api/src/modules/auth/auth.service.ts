@@ -30,13 +30,26 @@ export class AuthService {
       .limit(1);
 
     if (!user) {
-      this.log({ email, ip, userAgent, success: false, failureReason: 'user_not_found' });
+      this.log({
+        email,
+        ip,
+        userAgent,
+        success: false,
+        failureReason: 'user_not_found',
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
-      this.log({ email, userId: user.id, ip, userAgent, success: false, failureReason: 'invalid_password' });
+      this.log({
+        email,
+        userId: user.id,
+        ip,
+        userAgent,
+        success: false,
+        failureReason: 'invalid_password',
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 

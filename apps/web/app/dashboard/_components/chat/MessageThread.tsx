@@ -28,8 +28,10 @@ export function MessageThread({ messages, isLoading, accountLabel }: MessageThre
 
   return (
     <div className="mx-auto w-full max-w-195">
-      {messages.map((m) => {
+      {messages.map((m, idx) => {
         const isUser = m.role === "user";
+        const isStreamingPlaceholder =
+          !isUser && isLoading && idx === messages.length - 1 && m.content.length === 0;
         return (
           <div key={m.id} className="mb-4">
             {!isUser && <ChatLabel suffix={accountLabel} />}
@@ -37,23 +39,14 @@ export function MessageThread({ messages, isLoading, accountLabel }: MessageThre
               <div
                 className={`max-w-[80%] whitespace-pre-wrap rounded-xl px-3.75 py-2.75 text-[13.5px] leading-relaxed ${
                   isUser ? "bg-ink text-neutral-50" : "border border-neutral-200 bg-surface text-neutral-700"
-                }`}
+                } ${isStreamingPlaceholder ? "text-neutral-400" : ""}`}
               >
-                {m.content}
+                {isStreamingPlaceholder ? `Analyzing ${accountLabel} data…` : m.content}
               </div>
             </div>
           </div>
         );
       })}
-
-      {isLoading && (
-        <div className="mb-4">
-          <ChatLabel />
-          <div className="inline-block rounded-xl border border-neutral-200 bg-surface px-3.75 py-2.75 text-[13px] text-neutral-400">
-            Analyzing {accountLabel} data…
-          </div>
-        </div>
-      )}
 
       <div ref={bottomRef} />
     </div>

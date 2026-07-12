@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useClientRoster } from "../../_lib/use-client-roster";
-import { sendCopilotMessage } from "../../_lib/copilot-api";
+import { streamCopilotMessage } from "../../_lib/copilot-api";
 import type { ChatMessage } from "../../_lib/chat-types";
 import UserMenu from "../user-menu";
 import { AccountSelector } from "./AccountSelector";
+import { ChatHistory } from "./ChatHistory";
 import { QuickActions } from "./QuickActions";
 import { MessageThread } from "./MessageThread";
 import { ChatInput } from "./ChatInput";
@@ -27,6 +28,7 @@ export function ChatView() {
   const [input, setInput] = useState("");
   const [isSending, setSending] = useState(false);
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const handleSelectAccount = useCallback((id: string, name: string) => {
     setSelectedId(id);
@@ -38,37 +40,76 @@ export function ChatView() {
       const trimmed = text.trim();
       if (!trimmed || isSending) return;
 
-      setMessages((prev) => [...prev, { id: newMessageId(), role: "user", content: trimmed }]);
+      const assistantId = newMessageId();
+      setMessages((prev) => [
+        ...prev,
+        { id: newMessageId(), role: "user", content: trimmed },
+        { id: assistantId, role: "assistant", content: "" },
+      ]);
       setInput("");
       setSending(true);
 
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      const appendDelta = (delta: string) => {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + delta } : m)),
+        );
+      };
+
       try {
-        const response = await sendCopilotMessage(selectedId, trimmed, conversationId);
-        setConversationId(response.conversationId);
-        setMessages((prev) => [
-          ...prev,
-          { id: newMessageId(), role: "assistant", content: response.reply },
-        ]);
-      } catch {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: newMessageId(),
-            role: "assistant",
-            content: "Sorry, the co-pilot is temporarily unavailable. Please try again in a moment.",
-          },
-        ]);
+        const result = await streamCopilotMessage({
+          accountId: selectedId,
+          message: trimmed,
+          conversationId,
+          signal: controller.signal,
+          onDelta: appendDelta,
+        });
+        setConversationId(result.conversationId);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId && m.content.length === 0
+                ? { ...m, content: "Stopped before generating a response." }
+                : m,
+            ),
+          );
+        } else {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    content: "Sorry, the co-pilot is temporarily unavailable. Please try again in a moment.",
+                  }
+                : m,
+            ),
+          );
+        }
       } finally {
         setSending(false);
+        abortControllerRef.current = null;
       }
     },
     [selectedId, conversationId, isSending],
   );
 
+  const stop = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
+
   const handleNewChat = useCallback(() => {
     setMessages([]);
     setInput("");
     setConversationId(undefined);
+  }, []);
+
+  const handleLoadConversation = useCallback((id: string, loadedMessages: ChatMessage[]) => {
+    setConversationId(id);
+    setMessages(loadedMessages);
+    setInput("");
   }, []);
 
   const hasMessages = messages.length > 0;
@@ -82,6 +123,11 @@ export function ChatView() {
           <span className="text-[12px] text-neutral-400">connected to live client data</span>
         </div>
         <div className="flex items-center gap-2">
+          <ChatHistory
+            accountId={selectedId}
+            activeConversationId={conversationId}
+            onLoad={handleLoadConversation}
+          />
           {hasMessages && (
             <button
               onClick={handleNewChat}
@@ -121,7 +167,7 @@ export function ChatView() {
             />
             <span className="text-[11.5px] text-neutral-300">optional — defaults to all clients</span>
           </div>
-          <ChatInput value={input} onChange={setInput} onSend={() => send(input)} disabled={isSending} accountLabel={accountLabel} />
+          <ChatInput value={input} onChange={setInput} onSend={() => send(input)} onStop={stop} disabled={isSending} accountLabel={accountLabel} />
           <div className="mt-3.5">
             <QuickActions accountName={accountName} disabled={isSending} onSelect={send} size="lg" />
           </div>
@@ -132,7 +178,7 @@ export function ChatView() {
             <MessageThread messages={messages} isLoading={isSending} accountLabel={accountLabel} />
           </div>
           <div className="flex shrink-0 flex-col items-center gap-2.25 border-t border-neutral-200 bg-canvas px-5 py-3">
-            <ChatInput value={input} onChange={setInput} onSend={() => send(input)} disabled={isSending} accountLabel={accountLabel} />
+            <ChatInput value={input} onChange={setInput} onSend={() => send(input)} onStop={stop} disabled={isSending} accountLabel={accountLabel} />
             <QuickActions accountName={accountName} disabled={isSending} onSelect={send} size="sm" />
           </div>
         </>

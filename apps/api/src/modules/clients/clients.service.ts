@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DrizzleService } from '../../db/drizzle.service';
-import { clients, amazonAdsAccounts } from '../../db/schema';
+import { clients } from '../../db/schema';
 import { UpdateClientDto } from './dto/update-client.dto';
 
 // ── Tier / status mappers ────────────────────────────────────────────────────
@@ -104,9 +104,11 @@ export class ClientsService {
     if (dto.status !== undefined) patch.status = dto.status;
     if (dto.tier !== undefined) patch.tier = dto.tier ?? null;
     if (dto.targetTacos !== undefined)
-      patch.targetTacos = dto.targetTacos != null ? String(dto.targetTacos) : null;
+      patch.targetTacos =
+        dto.targetTacos != null ? String(dto.targetTacos) : null;
     if (dto.goalRevenue !== undefined)
-      patch.goalRevenue = dto.goalRevenue != null ? String(dto.goalRevenue) : null;
+      patch.goalRevenue =
+        dto.goalRevenue != null ? String(dto.goalRevenue) : null;
     patch.updatedAt = new Date();
 
     const [row] = await this.drizzle.db
@@ -132,5 +134,4 @@ export class ClientsService {
       })),
     };
   }
-
 }

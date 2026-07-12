@@ -109,9 +109,7 @@ export class MetricsService {
     // ── 2. Filter by marketplace if requested ─────────────────────────────────
     const filtered = mkt
       ? clientRows.filter((c) =>
-          c.amazonAdsAccounts.some(
-            (a) => a.countryCode?.toUpperCase() === mkt,
-          ),
+          c.amazonAdsAccounts.some((a) => a.countryCode?.toUpperCase() === mkt),
         )
       : clientRows;
 
@@ -268,7 +266,7 @@ export class MetricsService {
         status: STATUS_MAP[c.status] ?? c.status,
         goalTacos: c.targetTacos ? parseFloat(c.targetTacos) : null,
         goalRevenue: c.goalRevenue ? parseFloat(c.goalRevenue) : null,
-        marketplaceCount: (c.accountRows as object[]).length,
+        marketplaceCount: c.accountRows.length,
         spend: c.spend,
         ppcRev: c.ppcRev,
         ppcOrd: c.ppcOrd,

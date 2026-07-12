@@ -1,4 +1,10 @@
-import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { MetricsService } from './metrics.service';
 
@@ -16,7 +22,9 @@ export class MetricsController {
     @Query('marketplace') marketplace?: string,
   ) {
     if (!from || !DATE_RE.test(from) || !to || !DATE_RE.test(to)) {
-      throw new BadRequestException('from and to are required in YYYY-MM-DD format');
+      throw new BadRequestException(
+        'from and to are required in YYYY-MM-DD format',
+      );
     }
     if (from > to) {
       throw new BadRequestException('from must be on or before to');

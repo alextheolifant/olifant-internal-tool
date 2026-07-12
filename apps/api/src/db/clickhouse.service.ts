@@ -7,7 +7,8 @@ export class ClickhouseService {
   private readonly authHeader: string;
 
   constructor() {
-    const rawURL = process.env.CLICKHOUSE_URL ?? 'http://localhost:8123/default';
+    const rawURL =
+      process.env.CLICKHOUSE_URL ?? 'http://localhost:8123/default';
     const u = new URL(rawURL);
     const db = u.pathname.replace(/^\//, '') || 'default';
     const user = u.username || 'default';

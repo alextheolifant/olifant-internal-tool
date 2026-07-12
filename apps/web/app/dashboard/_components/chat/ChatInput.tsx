@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, type FormEvent, type KeyboardEvent } from "react";
-import { IconSend, IconTarget } from "./icons";
+import { IconSend, IconStop, IconTarget } from "./icons";
 
 const MAX_HEIGHT = 120;
 
@@ -9,11 +9,12 @@ interface ChatInputProps {
   value: string;
   onChange: (v: string) => void;
   onSend: () => void;
+  onStop: () => void;
   disabled: boolean;
   accountLabel: string;
 }
 
-export function ChatInput({ value, onChange, onSend, disabled, accountLabel }: ChatInputProps) {
+export function ChatInput({ value, onChange, onSend, onStop, disabled, accountLabel }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   function handleInput(e: FormEvent<HTMLTextAreaElement>) {
@@ -49,14 +50,24 @@ export function ChatInput({ value, onChange, onSend, disabled, accountLabel }: C
           <IconTarget className="h-3.25 w-3.25 text-green-700" />
           Connected to {accountLabel}
         </span>
-        <button
-          onClick={onSend}
-          disabled={disabled || value.trim().length === 0}
-          aria-label="Send message"
-          className="flex h-7.5 w-7.5 shrink-0 items-center justify-center rounded-lg bg-ink text-neutral-50 transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400"
-        >
-          <IconSend className="h-3.75 w-3.75" />
-        </button>
+        {disabled ? (
+          <button
+            onClick={onStop}
+            aria-label="Stop generating"
+            className="flex h-7.5 w-7.5 shrink-0 items-center justify-center rounded-lg bg-ink text-neutral-50 transition-colors hover:bg-neutral-800"
+          >
+            <IconStop className="h-3.25 w-3.25" />
+          </button>
+        ) : (
+          <button
+            onClick={onSend}
+            disabled={value.trim().length === 0}
+            aria-label="Send message"
+            className="flex h-7.5 w-7.5 shrink-0 items-center justify-center rounded-lg bg-ink text-neutral-50 transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400"
+          >
+            <IconSend className="h-3.75 w-3.75" />
+          </button>
+        )}
       </div>
     </div>
   );
