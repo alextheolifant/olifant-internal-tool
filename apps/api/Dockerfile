@@ -6,6 +6,7 @@ WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/ ./packages/
 COPY apps/api/ ./apps/api/
+COPY db/ ./db/
 RUN pnpm install --frozen-lockfile
 
 # Build via pnpm filter so it uses the correct local node_modules/.bin/nest
