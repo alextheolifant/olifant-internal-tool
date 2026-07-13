@@ -348,4 +348,14 @@ export class AiService {
       createdAt: r.createdAt,
     }));
   }
+
+  async deleteConversation(userId: string, conversationId: string): Promise<void> {
+    // Scoped delete doubles as the ownership check — messages cascade via the FK.
+    const deleted = await this.drizzle.db
+      .delete(copilotConversations)
+      .where(and(eq(copilotConversations.id, conversationId), eq(copilotConversations.userId, userId)))
+      .returning({ id: copilotConversations.id });
+
+    if (deleted.length === 0) throw new NotFoundException('Conversation not found');
+  }
 }

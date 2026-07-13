@@ -64,10 +64,9 @@ export interface CopilotConversationSummary {
   preview: string;
 }
 
-export async function listCopilotConversations(accountId: string): Promise<CopilotConversationSummary[]> {
-  const res = await apiFetch(`/api/ai/copilot/conversations?accountId=${encodeURIComponent(accountId)}`, {
-    cache: "no-store",
-  });
+export async function listCopilotConversations(accountId?: string): Promise<CopilotConversationSummary[]> {
+  const qs = accountId ? `?accountId=${encodeURIComponent(accountId)}` : "";
+  const res = await apiFetch(`/api/ai/copilot/conversations${qs}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -87,4 +86,11 @@ export async function getCopilotConversationMessages(
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
+}
+
+export async function deleteCopilotConversation(conversationId: string): Promise<void> {
+  const res = await apiFetch(`/api/ai/copilot/conversations/${conversationId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }

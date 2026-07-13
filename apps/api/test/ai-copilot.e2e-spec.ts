@@ -198,6 +198,54 @@ describe('AI Copilot (e2e)', () => {
       .expect(404);
   });
 
+  it('deleting a conversation requires ownership and cascades to its messages', async () => {
+    // Seeded directly (no Anthropic call needed) — delete only cares about ownership + cascade.
+    const [conv] = await drizzle.db
+      .insert(copilotConversations)
+      .values({ clientId: null, userId })
+      .returning();
+    await drizzle.db.insert(copilotMessages).values([
+      { conversationId: conv.id, role: 'user', content: 'test' },
+      { conversationId: conv.id, role: 'assistant', content: 'test reply' },
+    ]);
+
+    // A different user can't delete it.
+    await request(app.getHttpServer())
+      .delete(`/ai/copilot/conversations/${conv.id}`)
+      .set('Authorization', `Bearer ${otherToken}`)
+      .expect(404);
+
+    const stillThere = await drizzle.db
+      .select()
+      .from(copilotConversations)
+      .where(eq(copilotConversations.id, conv.id));
+    expect(stillThere).toHaveLength(1);
+
+    // The owner can.
+    await request(app.getHttpServer())
+      .delete(`/ai/copilot/conversations/${conv.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(204);
+
+    const conversationRows = await drizzle.db
+      .select()
+      .from(copilotConversations)
+      .where(eq(copilotConversations.id, conv.id));
+    expect(conversationRows).toHaveLength(0);
+
+    const messageRows = await drizzle.db
+      .select()
+      .from(copilotMessages)
+      .where(eq(copilotMessages.conversationId, conv.id));
+    expect(messageRows).toHaveLength(0);
+
+    // Deleting again (already gone) is a 404, not a silent success.
+    await request(app.getHttpServer())
+      .delete(`/ai/copilot/conversations/${conv.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+  });
+
   it('stopping generation mid-stream persists the partial reply instead of discarding it', async () => {
     const controller = new AbortController();
     const res = await fetch(`${baseUrl}/ai/copilot/message`, {

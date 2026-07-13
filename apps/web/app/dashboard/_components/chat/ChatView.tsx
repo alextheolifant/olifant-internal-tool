@@ -106,11 +106,29 @@ export function ChatView() {
     setConversationId(undefined);
   }, []);
 
-  const handleLoadConversation = useCallback((id: string, loadedMessages: ChatMessage[]) => {
-    setConversationId(id);
-    setMessages(loadedMessages);
-    setInput("");
-  }, []);
+  const handleLoadConversation = useCallback(
+    (id: string, loadedAccountId: string, loadedAccountLabel: string, loadedMessages: ChatMessage[]) => {
+      // Sync the selector to the conversation's own account — otherwise the next
+      // message in this thread would inject the wrong account's live data.
+      setSelectedId(loadedAccountId);
+      setAccountLabel(loadedAccountLabel);
+      setConversationId(id);
+      setMessages(loadedMessages);
+      setInput("");
+    },
+    [],
+  );
+
+  const handleDeleteConversation = useCallback(
+    (id: string) => {
+      // Only reset the active thread if the deleted conversation was the one showing.
+      if (id !== conversationId) return;
+      setMessages([]);
+      setInput("");
+      setConversationId(undefined);
+    },
+    [conversationId],
+  );
 
   const hasMessages = messages.length > 0;
 
@@ -124,9 +142,10 @@ export function ChatView() {
         </div>
         <div className="flex items-center gap-2">
           <ChatHistory
-            accountId={selectedId}
+            clients={clients}
             activeConversationId={conversationId}
             onLoad={handleLoadConversation}
+            onDelete={handleDeleteConversation}
           />
           {hasMessages && (
             <button

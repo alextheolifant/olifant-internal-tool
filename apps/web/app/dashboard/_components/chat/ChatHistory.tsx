@@ -2,17 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  deleteCopilotConversation,
   getCopilotConversationMessages,
   listCopilotConversations,
   type CopilotConversationSummary,
 } from "../../_lib/copilot-api";
 import type { ChatMessage } from "../../_lib/chat-types";
-import { IconHistory } from "./icons";
+import type { ClientRow } from "../../_lib/types";
+import { IconHistory, IconTrash } from "./icons";
 
 interface ChatHistoryProps {
-  accountId: string;
+  clients: ClientRow[];
   activeConversationId: string | undefined;
-  onLoad: (conversationId: string, messages: ChatMessage[]) => void;
+  onLoad: (conversationId: string, accountId: string, accountLabel: string, messages: ChatMessage[]) => void;
+  onDelete?: (conversationId: string) => void;
 }
 
 function relativeTime(iso: string): string {
@@ -26,11 +29,12 @@ function relativeTime(iso: string): string {
   return `${days}d ago`;
 }
 
-export function ChatHistory({ accountId, activeConversationId, onLoad }: ChatHistoryProps) {
+export function ChatHistory({ clients, activeConversationId, onLoad, onDelete }: ChatHistoryProps) {
   const [open, setOpen] = useState(false);
   const [isLoading, setLoading] = useState(false);
   const [conversations, setConversations] = useState<CopilotConversationSummary[]>([]);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,6 +45,11 @@ export function ChatHistory({ accountId, activeConversationId, onLoad }: ChatHis
     return () => document.removeEventListener("mousedown", onOutside);
   }, []);
 
+  function accountLabelFor(accId: string): string {
+    if (accId === "all") return "All Clients";
+    return clients.find((c) => c.id === accId)?.name ?? "Unknown account";
+  }
+
   async function toggle() {
     const next = !open;
     setOpen(next);
@@ -48,7 +57,9 @@ export function ChatHistory({ accountId, activeConversationId, onLoad }: ChatHis
 
     setLoading(true);
     try {
-      setConversations(await listCopilotConversations(accountId));
+      // Every conversation the user has, across all accounts — not just the
+      // currently selected one, so history never silently hides entries.
+      setConversations(await listCopilotConversations());
     } catch {
       setConversations([]);
     } finally {
@@ -56,12 +67,14 @@ export function ChatHistory({ accountId, activeConversationId, onLoad }: ChatHis
     }
   }
 
-  async function selectConversation(id: string) {
-    setLoadingId(id);
+  async function selectConversation(c: CopilotConversationSummary) {
+    setLoadingId(c.id);
     try {
-      const rows = await getCopilotConversationMessages(id);
+      const rows = await getCopilotConversationMessages(c.id);
       onLoad(
-        id,
+        c.id,
+        c.accountId,
+        accountLabelFor(c.accountId),
         rows.map((r) => ({ id: r.id, role: r.role, content: r.content })),
       );
       setOpen(false);
@@ -69,6 +82,20 @@ export function ChatHistory({ accountId, activeConversationId, onLoad }: ChatHis
       // leave the panel open — user can retry or pick another conversation
     } finally {
       setLoadingId(null);
+    }
+  }
+
+  async function handleDelete(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setDeletingId(id);
+    try {
+      await deleteCopilotConversation(id);
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+      onDelete?.(id);
+    } catch {
+      // leave the row in place — user can retry
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -87,26 +114,41 @@ export function ChatHistory({ accountId, activeConversationId, onLoad }: ChatHis
           {isLoading && <div className="px-3 py-2 text-[11.5px] text-neutral-400">Loading…</div>}
 
           {!isLoading && conversations.length === 0 && (
-            <div className="px-3 py-2 text-[11.5px] text-neutral-400">No past conversations for this account</div>
+            <div className="px-3 py-2 text-[11.5px] text-neutral-400">No past conversations yet</div>
           )}
 
           {!isLoading &&
             conversations.map((c) => (
-              <button
+              <div
                 key={c.id}
-                onClick={() => selectConversation(c.id)}
-                disabled={loadingId !== null}
-                className={`flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors hover:bg-neutral-50 disabled:opacity-50 ${
+                role="button"
+                tabIndex={0}
+                onClick={() => selectConversation(c)}
+                onKeyDown={(e) => e.key === "Enter" && selectConversation(c)}
+                className={`group flex w-full cursor-pointer items-center gap-1.5 px-3 py-2 text-left transition-colors hover:bg-neutral-50 ${
                   c.id === activeConversationId ? "bg-brand/15" : ""
-                }`}
+                } ${deletingId === c.id ? "opacity-50" : ""}`}
               >
-                <span className="line-clamp-1 w-full truncate text-[12px] font-medium text-ink">
-                  {c.preview || "New conversation"}
-                </span>
-                <span className="text-[10.5px] text-neutral-400">
-                  {loadingId === c.id ? "Loading…" : relativeTime(c.updatedAt)}
-                </span>
-              </button>
+                <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+                  <span className="line-clamp-1 w-full truncate text-[12px] font-medium text-ink">
+                    {c.preview || "New conversation"}
+                  </span>
+                  <span className="flex items-center gap-1.25 text-[10.5px] text-neutral-400">
+                    <span className="max-w-30 truncate rounded bg-neutral-100 px-1 py-px font-medium text-neutral-500">
+                      {accountLabelFor(c.accountId)}
+                    </span>
+                    {loadingId === c.id ? "Loading…" : relativeTime(c.updatedAt)}
+                  </span>
+                </div>
+                <button
+                  onClick={(e) => handleDelete(c.id, e)}
+                  disabled={deletingId !== null}
+                  aria-label="Delete conversation"
+                  className="shrink-0 rounded p-1 text-neutral-300 opacity-0 transition-colors hover:bg-neutral-100 hover:text-red-600 group-hover:opacity-100 disabled:opacity-50"
+                >
+                  <IconTrash className="h-3.25 w-3.25" />
+                </button>
+              </div>
             ))}
         </div>
       )}

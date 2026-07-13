@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -85,5 +88,14 @@ export class AiController {
     @Req() req: { user: { id: string } },
   ) {
     return this.aiService.getConversationMessages(req.user.id, id);
+  }
+
+  @Delete('copilot/conversations/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteConversation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user: { id: string } },
+  ) {
+    await this.aiService.deleteConversation(req.user.id, id);
   }
 }

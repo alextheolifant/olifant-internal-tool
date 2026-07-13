@@ -78,6 +78,10 @@ function buildDrizzleMock() {
   const set = jest.fn().mockReturnValue({ where });
   const update = jest.fn().mockReturnValue({ set });
 
+  const deleteReturning = jest.fn().mockResolvedValue([{ id: 'deleted-conversation-id' }]);
+  const deleteWhere = jest.fn().mockReturnValue({ returning: deleteReturning });
+  const del = jest.fn().mockReturnValue({ where: deleteWhere });
+
   return {
     db: {
       query: {
@@ -86,8 +90,21 @@ function buildDrizzleMock() {
       },
       insert,
       update,
+      delete: del,
     },
-    _mocks: { findFirst, findMany, returning, values, insert, where, set, update },
+    _mocks: {
+      findFirst,
+      findMany,
+      returning,
+      values,
+      insert,
+      where,
+      set,
+      update,
+      del,
+      deleteWhere,
+      deleteReturning,
+    },
   };
 }
 
@@ -200,6 +217,22 @@ describe('AiService', () => {
       await expect(service.prepareMessage('user-1', { accountId: 'all', message: 'Hi' })).rejects.toThrow(
         ServiceUnavailableException,
       );
+    });
+  });
+
+  describe('deleteConversation', () => {
+    it('deletes the conversation scoped to the owning user', async () => {
+      await service.deleteConversation('user-1', 'conv-1');
+
+      expect(drizzle._mocks.del).toHaveBeenCalled();
+      expect(drizzle._mocks.deleteWhere).toHaveBeenCalledWith(expect.anything());
+      expect(drizzle._mocks.deleteReturning).toHaveBeenCalled();
+    });
+
+    it("throws NotFoundException when the conversation doesn't exist or isn't the caller's", async () => {
+      drizzle._mocks.deleteReturning.mockResolvedValue([]);
+
+      await expect(service.deleteConversation('user-1', 'not-mine')).rejects.toThrow(NotFoundException);
     });
   });
 });

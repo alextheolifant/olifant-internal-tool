@@ -1,3 +1,26 @@
+export function IconTrash({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+      <path d="M2.5 4.2h11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <path
+        d="M6 4.2V2.9c0-.4.3-.7.7-.7h2.6c.4 0 .7.3.7.7v1.3"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4 4.2 4.6 13c0 .4.3.7.7.7h5.4c.4 0 .7-.3.7-.7l.6-8.8"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M6.5 6.8v4.4M9.5 6.8v4.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function IconSparkle({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
