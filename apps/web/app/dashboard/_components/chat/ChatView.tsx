@@ -52,11 +52,12 @@ export function ChatView() {
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      const appendDelta = (delta: string) => {
+      const updateAssistantMessage = (updater: (content: string) => string) => {
         setMessages((prev) =>
-          prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + delta } : m)),
+          prev.map((m) => (m.id === assistantId ? { ...m, content: updater(m.content) } : m)),
         );
       };
+      const appendDelta = (delta: string) => updateAssistantMessage((content) => content + delta);
 
       try {
         const result = await streamCopilotMessage({
@@ -69,23 +70,12 @@ export function ChatView() {
         setConversationId(result.conversationId);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId && m.content.length === 0
-                ? { ...m, content: "Stopped before generating a response." }
-                : m,
-            ),
+          updateAssistantMessage((content) =>
+            content.length === 0 ? "Stopped before generating a response." : content,
           );
         } else {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId
-                ? {
-                    ...m,
-                    content: "Sorry, the co-pilot is temporarily unavailable. Please try again in a moment.",
-                  }
-                : m,
-            ),
+          updateAssistantMessage(
+            () => "Sorry, the co-pilot is temporarily unavailable. Please try again in a moment.",
           );
         }
       } finally {

@@ -5,7 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { DrizzleService } from '../../db/drizzle.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { copilotConversations, copilotMessages } from '../../db/schema';
@@ -147,14 +147,7 @@ export class AiService {
     let priorTurns: { role: string; content: string }[] = [];
 
     if (conversationId) {
-      const conversation =
-        await this.drizzle.db.query.copilotConversations.findFirst({
-          where: and(
-            eq(copilotConversations.id, conversationId),
-            eq(copilotConversations.userId, userId),
-          ),
-        });
-      if (!conversation) throw new NotFoundException('Conversation not found');
+      await this.assertOwnedConversation(userId, conversationId);
 
       const rows = await this.drizzle.db.query.copilotMessages.findMany({
         where: eq(copilotMessages.conversationId, conversationId),
@@ -299,42 +292,44 @@ export class AiService {
       conditions.push(eq(copilotConversations.clientId, accountId));
     }
 
+    // Preview is fetched via the relation in the same query — avoids an N+1
+    // (a separate round trip per conversation) that the old implementation had.
     const conversations =
       await this.drizzle.db.query.copilotConversations.findMany({
         where: and(...conditions),
         orderBy: (c, { desc }) => [desc(c.updatedAt)],
+        with: {
+          messages: {
+            where: eq(copilotMessages.role, 'user'),
+            orderBy: (m, { asc: ascOrder }) => [ascOrder(m.createdAt)],
+            limit: 1,
+          },
+        },
       });
 
-    return Promise.all(
-      conversations.map(async (c) => {
-        const firstMessage =
-          await this.drizzle.db.query.copilotMessages.findFirst({
-            where: and(
-              eq(copilotMessages.conversationId, c.id),
-              eq(copilotMessages.role, 'user'),
-            ),
-            orderBy: (m) => [asc(m.createdAt)],
-          });
-        return {
-          id: c.id,
-          accountId: c.clientId ?? 'all',
-          createdAt: c.createdAt,
-          updatedAt: c.updatedAt,
-          preview: firstMessage?.content.slice(0, 140) ?? '',
-        };
-      }),
-    );
+    return conversations.map((c) => ({
+      id: c.id,
+      accountId: c.clientId ?? 'all',
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+      preview: c.messages[0]?.content.slice(0, 140) ?? '',
+    }));
+  }
+
+  /** Loads a conversation scoped to its owner, or throws NotFoundException. */
+  private async assertOwnedConversation(userId: string, conversationId: string) {
+    const conversation = await this.drizzle.db.query.copilotConversations.findFirst({
+      where: and(
+        eq(copilotConversations.id, conversationId),
+        eq(copilotConversations.userId, userId),
+      ),
+    });
+    if (!conversation) throw new NotFoundException('Conversation not found');
+    return conversation;
   }
 
   async getConversationMessages(userId: string, conversationId: string) {
-    const conversation =
-      await this.drizzle.db.query.copilotConversations.findFirst({
-        where: and(
-          eq(copilotConversations.id, conversationId),
-          eq(copilotConversations.userId, userId),
-        ),
-      });
-    if (!conversation) throw new NotFoundException('Conversation not found');
+    await this.assertOwnedConversation(userId, conversationId);
 
     const rows = await this.drizzle.db.query.copilotMessages.findMany({
       where: eq(copilotMessages.conversationId, conversationId),
