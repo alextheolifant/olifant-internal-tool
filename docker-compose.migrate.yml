@@ -1,0 +1,10 @@
+services:
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: builder
+    working_dir: /app/apps/api
+    command: pnpm db:migrate
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
