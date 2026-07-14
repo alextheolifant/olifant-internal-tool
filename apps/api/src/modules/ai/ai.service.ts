@@ -13,6 +13,11 @@ import { SendCopilotMessageDto } from './dto/send-copilot-message.dto';
 
 const COPILOT_MODEL = 'claude-sonnet-4-6';
 
+// Caps how much prior conversation is replayed into the prompt on each turn —
+// otherwise input tokens (and the history query itself) grow unbounded as a
+// conversation gets longer.
+const MAX_HISTORY_MESSAGES = 20;
+
 export const COPILOT_SYSTEM_PROMPT =
   "You are the Olifant Digital Co-pilot — a senior Amazon PPC and e-commerce performance strategist embedded in the agency's client dashboard. You have the client's live performance data below. Always answer using the actual numbers; be specific, concise, and immediately actionable. Olifant's methodology is TACoS-first: judge accounts on total ad efficiency against total revenue, and treat rising organic share at flat or falling TACoS as the goal — not just a low ACoS. Write in tight, skimmable sections with short bullets and concrete next steps. Never invent metrics you weren't given. Speak like a sharp operator, not a chatbot.";
 
@@ -151,9 +156,12 @@ export class AiService {
 
       const rows = await this.drizzle.db.query.copilotMessages.findMany({
         where: eq(copilotMessages.conversationId, conversationId),
-        orderBy: (m, { asc: ascOrder }) => [ascOrder(m.createdAt)],
+        orderBy: (m, { desc }) => [desc(m.createdAt)],
+        limit: MAX_HISTORY_MESSAGES,
       });
-      priorTurns = rows.map((r) => ({ role: r.role, content: r.content }));
+      priorTurns = rows
+        .reverse()
+        .map((r) => ({ role: r.role, content: r.content }));
     } else {
       const [conversation] = await this.drizzle.db
         .insert(copilotConversations)
@@ -317,13 +325,17 @@ export class AiService {
   }
 
   /** Loads a conversation scoped to its owner, or throws NotFoundException. */
-  private async assertOwnedConversation(userId: string, conversationId: string) {
-    const conversation = await this.drizzle.db.query.copilotConversations.findFirst({
-      where: and(
-        eq(copilotConversations.id, conversationId),
-        eq(copilotConversations.userId, userId),
-      ),
-    });
+  private async assertOwnedConversation(
+    userId: string,
+    conversationId: string,
+  ) {
+    const conversation =
+      await this.drizzle.db.query.copilotConversations.findFirst({
+        where: and(
+          eq(copilotConversations.id, conversationId),
+          eq(copilotConversations.userId, userId),
+        ),
+      });
     if (!conversation) throw new NotFoundException('Conversation not found');
     return conversation;
   }
@@ -344,13 +356,22 @@ export class AiService {
     }));
   }
 
-  async deleteConversation(userId: string, conversationId: string): Promise<void> {
+  async deleteConversation(
+    userId: string,
+    conversationId: string,
+  ): Promise<void> {
     // Scoped delete doubles as the ownership check — messages cascade via the FK.
     const deleted = await this.drizzle.db
       .delete(copilotConversations)
-      .where(and(eq(copilotConversations.id, conversationId), eq(copilotConversations.userId, userId)))
+      .where(
+        and(
+          eq(copilotConversations.id, conversationId),
+          eq(copilotConversations.userId, userId),
+        ),
+      )
       .returning({ id: copilotConversations.id });
 
-    if (deleted.length === 0) throw new NotFoundException('Conversation not found');
+    if (deleted.length === 0)
+      throw new NotFoundException('Conversation not found');
   }
 }

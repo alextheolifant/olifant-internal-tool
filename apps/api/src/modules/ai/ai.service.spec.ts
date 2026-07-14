@@ -9,7 +9,9 @@ import { MetricsService } from '../metrics/metrics.service';
 // trips a Jest "environment torn down" error. Stub it out entirely.
 jest.mock('@anthropic-ai/sdk', () => ({
   __esModule: true,
-  default: jest.fn().mockImplementation(() => ({ messages: { stream: jest.fn() } })),
+  default: jest
+    .fn()
+    .mockImplementation(() => ({ messages: { stream: jest.fn() } })),
 }));
 
 const PENDING = 'not yet available (Amazon SP-API integration in progress)';
@@ -71,14 +73,18 @@ function buildMetricsFixture() {
 function buildDrizzleMock() {
   const findFirst = jest.fn();
   const findMany = jest.fn().mockResolvedValue([]);
-  const returning = jest.fn().mockResolvedValue([{ id: 'new-conversation-id' }]);
+  const returning = jest
+    .fn()
+    .mockResolvedValue([{ id: 'new-conversation-id' }]);
   const values = jest.fn().mockReturnValue({ returning });
   const insert = jest.fn().mockReturnValue({ values });
   const where = jest.fn().mockResolvedValue(undefined);
   const set = jest.fn().mockReturnValue({ where });
   const update = jest.fn().mockReturnValue({ set });
 
-  const deleteReturning = jest.fn().mockResolvedValue([{ id: 'deleted-conversation-id' }]);
+  const deleteReturning = jest
+    .fn()
+    .mockResolvedValue([{ id: 'deleted-conversation-id' }]);
   const deleteWhere = jest.fn().mockReturnValue({ returning: deleteReturning });
   const del = jest.fn().mockReturnValue({ where: deleteWhere });
 
@@ -115,19 +121,29 @@ describe('AiService', () => {
 
   beforeEach(() => {
     drizzle = buildDrizzleMock();
-    metricsService = { getClientMetrics: jest.fn().mockResolvedValue(buildMetricsFixture()) };
-    service = new AiService(drizzle as unknown as DrizzleService, metricsService as unknown as MetricsService);
+    metricsService = {
+      getClientMetrics: jest.fn().mockResolvedValue(buildMetricsFixture()),
+    };
+    service = new AiService(
+      drizzle as unknown as DrizzleService,
+      metricsService as unknown as MetricsService,
+    );
   });
 
   describe('buildCopilotContext', () => {
     const call = (accountId: string) =>
-      (service as unknown as { buildCopilotContext(a: string, f: string, t: string): Promise<string> })
-        .buildCopilotContext(accountId, '2026-06-13', '2026-07-13');
+      (
+        service as unknown as {
+          buildCopilotContext(a: string, f: string, t: string): Promise<string>;
+        }
+      ).buildCopilotContext(accountId, '2026-06-13', '2026-07-13');
 
     it('renders the "all clients" snapshot with real metrics as numbers and pending metrics as explicit text', async () => {
       const context = await call('all');
 
-      expect(context).toContain('Olifant Digital agency snapshot for 2026-06-13 to 2026-07-13 (2 clients)');
+      expect(context).toContain(
+        'Olifant Digital agency snapshot for 2026-06-13 to 2026-07-13 (2 clients)',
+      );
       // Pending fields must say so explicitly — never a bare null/undefined/0 standing in for missing data.
       expect(context).toContain(`Blended: revenue ${PENDING}`);
       expect(context).toContain(`TACoS ${PENDING}`);
@@ -163,39 +179,62 @@ describe('AiService', () => {
 
     it('returns a clear not-found message for an unknown client id instead of throwing or fabricating data', async () => {
       const context = await call('client-does-not-exist');
-      expect(context).toBe('No performance data found for the requested client in 2026-06-13 to 2026-07-13.');
+      expect(context).toBe(
+        'No performance data found for the requested client in 2026-06-13 to 2026-07-13.',
+      );
     });
   });
 
   describe('prepareMessage', () => {
     it('creates a new "all clients" conversation (null clientId) when no conversationId is given', async () => {
-      const result = await service.prepareMessage('user-1', { accountId: 'all', message: 'Hi' });
+      const result = await service.prepareMessage('user-1', {
+        accountId: 'all',
+        message: 'Hi',
+      });
 
       expect(drizzle._mocks.insert).toHaveBeenCalledWith(expect.anything());
-      expect(drizzle._mocks.values).toHaveBeenCalledWith({ clientId: null, userId: 'user-1' });
+      expect(drizzle._mocks.values).toHaveBeenCalledWith({
+        clientId: null,
+        userId: 'user-1',
+      });
       expect(result.conversationId).toBe('new-conversation-id');
       expect(result.userContent).toContain('LIVE DATA:');
       expect(result.userContent).toContain('User: Hi');
     });
 
     it('creates a new client-scoped conversation when accountId is a client id', async () => {
-      await service.prepareMessage('user-1', { accountId: 'client-real', message: 'Hi' });
-      expect(drizzle._mocks.values).toHaveBeenCalledWith({ clientId: 'client-real', userId: 'user-1' });
+      await service.prepareMessage('user-1', {
+        accountId: 'client-real',
+        message: 'Hi',
+      });
+      expect(drizzle._mocks.values).toHaveBeenCalledWith({
+        clientId: 'client-real',
+        userId: 'user-1',
+      });
     });
 
     it('throws NotFoundException when conversationId does not belong to the requesting user', async () => {
       drizzle._mocks.findFirst.mockResolvedValue(undefined);
 
       await expect(
-        service.prepareMessage('user-1', { accountId: 'all', conversationId: 'not-mine', message: 'Hi' }),
+        service.prepareMessage('user-1', {
+          accountId: 'all',
+          conversationId: 'not-mine',
+          message: 'Hi',
+        }),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('folds prior turns into the prompt as "User: ...\\nCo-pilot: ..." before the new message', async () => {
-      drizzle._mocks.findFirst.mockResolvedValue({ id: 'conv-1', userId: 'user-1' });
+      drizzle._mocks.findFirst.mockResolvedValue({
+        id: 'conv-1',
+        userId: 'user-1',
+      });
+      // Service queries DESC (newest first) + reverses — mock returns rows in that
+      // same DESC order so the reverse produces the chronological order asserted below.
       drizzle._mocks.findMany.mockResolvedValue([
-        { role: 'user', content: 'What is our ACoS?' },
         { role: 'assistant', content: "It's 34.3%." },
+        { role: 'user', content: 'What is our ACoS?' },
       ]);
 
       const result = await service.prepareMessage('user-1', {
@@ -205,18 +244,22 @@ describe('AiService', () => {
       });
 
       expect(result.conversationId).toBe('conv-1');
-      expect(result.userContent).toContain('User: What is our ACoS?\nCo-pilot: It\'s 34.3%.');
+      expect(result.userContent).toContain(
+        "User: What is our ACoS?\nCo-pilot: It's 34.3%.",
+      );
       expect(result.userContent).toContain('User: And ROAS?');
       // Existing conversation — must not create a new one.
       expect(drizzle._mocks.insert).not.toHaveBeenCalled();
     });
 
     it('throws ServiceUnavailableException without fabricating context when live-data lookup fails', async () => {
-      metricsService.getClientMetrics.mockRejectedValue(new Error('ClickHouse is down'));
-
-      await expect(service.prepareMessage('user-1', { accountId: 'all', message: 'Hi' })).rejects.toThrow(
-        ServiceUnavailableException,
+      metricsService.getClientMetrics.mockRejectedValue(
+        new Error('ClickHouse is down'),
       );
+
+      await expect(
+        service.prepareMessage('user-1', { accountId: 'all', message: 'Hi' }),
+      ).rejects.toThrow(ServiceUnavailableException);
     });
   });
 
@@ -225,14 +268,18 @@ describe('AiService', () => {
       await service.deleteConversation('user-1', 'conv-1');
 
       expect(drizzle._mocks.del).toHaveBeenCalled();
-      expect(drizzle._mocks.deleteWhere).toHaveBeenCalledWith(expect.anything());
+      expect(drizzle._mocks.deleteWhere).toHaveBeenCalledWith(
+        expect.anything(),
+      );
       expect(drizzle._mocks.deleteReturning).toHaveBeenCalled();
     });
 
     it("throws NotFoundException when the conversation doesn't exist or isn't the caller's", async () => {
       drizzle._mocks.deleteReturning.mockResolvedValue([]);
 
-      await expect(service.deleteConversation('user-1', 'not-mine')).rejects.toThrow(NotFoundException);
+      await expect(
+        service.deleteConversation('user-1', 'not-mine'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });
