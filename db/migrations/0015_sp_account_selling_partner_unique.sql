@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "uq_sp_account_selling_partner" ON "amazon_sp_accounts" USING btree ("selling_partner_id");

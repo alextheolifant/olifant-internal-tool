@@ -1,9 +1,13 @@
-import { Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { Injectable, Logger } from '@nestjs/common';
+import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { DrizzleService } from '../../db/drizzle.service';
 import { ClickhouseService } from '../../db/clickhouse.service';
 import { RedisService } from '../../db/redis.service';
-import { amazonAdsAccounts } from '../../db/schema';
+import {
+  amazonAdsAccounts,
+  amazonSpAccounts,
+  spSalesDaily,
+} from '../../db/schema';
 
 // ── Internal types ─────────────────────────────────────────────────────────────
 
@@ -18,9 +22,9 @@ interface ChRow {
 }
 
 interface DerivedMetrics {
-  revenue: null;
-  tacos: null;
-  organicPct: null;
+  revenue: number | null;
+  tacos: number | null;
+  organicPct: number | null;
   acos: number;
   roas: number;
   cpc: number;
@@ -31,17 +35,27 @@ interface DerivedMetrics {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function deriveMetrics(
+// orgRev is null when there's no SP-API connection to compute it from (client
+// not yet connected, or — for individual ad accounts — total sales is only
+// ever known at the client grain, never per-account). Never fabricated as 0.
+export function deriveMetrics(
   spend: number,
   ppcRev: number,
   ppcOrd: number,
   clicks: number,
   impr: number,
+  orgRev: number | null,
 ): DerivedMetrics {
+  const revenue = orgRev === null ? null : ppcRev + orgRev;
   return {
-    revenue: null,
-    tacos: null,
-    organicPct: null,
+    revenue,
+    tacos: revenue === null ? null : revenue > 0 ? (spend / revenue) * 100 : 0,
+    organicPct:
+      revenue === null
+        ? null
+        : revenue > 0
+          ? ((orgRev as number) / revenue) * 100
+          : 0,
     acos: ppcRev > 0 ? (spend / ppcRev) * 100 : 0,
     roas: spend > 0 ? ppcRev / spend : 0,
     cpc: clicks > 0 ? spend / clicks : 0,
@@ -49,6 +63,19 @@ function deriveMetrics(
     cvr: clicks > 0 ? (ppcOrd / clicks) * 100 : 0,
     totalOrders: ppcOrd,
   };
+}
+
+// organic_revenue = total_sales - ppc_sales, floored at 0 — the two Amazon
+// systems have different attribution timing, so this can legitimately go
+// negative on recent days. Not a bug to chase perfectly, per the task spec.
+export function floorOrgRev(
+  totalSales: number,
+  ppcRev: number,
+): { orgRev: number; floored: boolean } {
+  const raw = totalSales - ppcRev;
+  return raw < 0
+    ? { orgRev: 0, floored: true }
+    : { orgRev: raw, floored: false };
 }
 
 function buildDateSeries(from: string, to: string): string[] {
@@ -74,6 +101,8 @@ const STATUS_MAP: Record<string, string> = {
 
 @Injectable()
 export class MetricsService {
+  private readonly logger = new Logger(MetricsService.name);
+
   constructor(
     private readonly drizzle: DrizzleService,
     private readonly ch: ClickhouseService,
@@ -221,12 +250,16 @@ export class MetricsService {
       if (!client) continue;
 
       const trend = allDates.map((d) => agg.byDate.get(d) ?? 0);
+      // Total sales from SP-API is only ever known at the client grain (an SP
+      // account isn't tied to one ads profile/marketplace) — never computable
+      // per individual account row.
       const accDerived = deriveMetrics(
         agg.spend,
         agg.ppcRev,
         agg.ppcOrd,
         agg.clicks,
         agg.impr,
+        null,
       );
 
       client.accountRows.push({
@@ -255,10 +288,31 @@ export class MetricsService {
       }
     }
 
-    // ── 8. Build client response rows ─────────────────────────────────────────
+    // ── 8. Resolve organic revenue (SP-API) per client, where connected ───────
+    const { connected, totalSalesByClient } =
+      await this.fetchOrganicSalesInputs(
+        filtered.map((c) => c.id),
+        from,
+        to,
+      );
+
+    // ── 9. Build client response rows ─────────────────────────────────────────
     const clients = [...clientAgg.values()].map((c) => {
       const trend = allDates.map((d) => c.byDate.get(d) ?? 0);
-      const d = deriveMetrics(c.spend, c.ppcRev, c.ppcOrd, c.clicks, c.impr);
+      const orgRev = this.resolveClientOrgRev(
+        c.id,
+        c.ppcRev,
+        connected,
+        totalSalesByClient,
+      );
+      const d = deriveMetrics(
+        c.spend,
+        c.ppcRev,
+        c.ppcOrd,
+        c.clicks,
+        c.impr,
+        orgRev,
+      );
       return {
         id: c.id,
         name: c.name,
@@ -272,7 +326,7 @@ export class MetricsService {
         ppcOrd: c.ppcOrd,
         clicks: c.clicks,
         impr: c.impr,
-        orgRev: null,
+        orgRev,
         orgOrd: null,
         units: null,
         ...d,
@@ -281,7 +335,7 @@ export class MetricsService {
       };
     });
 
-    // ── 9. Totals — sum raw inputs first, then derive once ────────────────────
+    // ── 10. Totals — sum raw inputs first, then derive once ───────────────────
     const raw = clients.reduce(
       (acc, c) => ({
         spend: acc.spend + c.spend,
@@ -292,12 +346,18 @@ export class MetricsService {
       }),
       { spend: 0, ppcRev: 0, ppcOrd: 0, clicks: 0, impr: 0 },
     );
+    // Only sums what's actually known — null only when not a single client is
+    // SP-API connected yet, same null-propagation deriveMetrics applies per client.
+    const totalsOrgRev = clients.some((c) => c.orgRev !== null)
+      ? clients.reduce((sum, c) => sum + (c.orgRev ?? 0), 0)
+      : null;
     const totalsDerived = deriveMetrics(
       raw.spend,
       raw.ppcRev,
       raw.ppcOrd,
       raw.clicks,
       raw.impr,
+      totalsOrgRev,
     );
     const activeCount = clients.filter((c) => c.status === 'Active').length;
 
@@ -308,7 +368,7 @@ export class MetricsService {
       clients,
       totals: {
         ...raw,
-        orgRev: null,
+        orgRev: totalsOrgRev,
         orgOrd: null,
         units: null,
         ...totalsDerived,
@@ -316,6 +376,82 @@ export class MetricsService {
         activeCount,
       },
     };
+  }
+
+  // ── Organic revenue (SP-API) ─────────────────────────────────────────────────
+
+  // Returns which clients have an active SP-API connection, and each
+  // connected client's total (organic + PPC) sales for the date range.
+  private async fetchOrganicSalesInputs(
+    clientIds: string[],
+    from: string,
+    to: string,
+  ): Promise<{
+    connected: Set<string>;
+    totalSalesByClient: Map<string, number>;
+  }> {
+    if (clientIds.length === 0) {
+      return { connected: new Set(), totalSalesByClient: new Map() };
+    }
+
+    const connectedRows = await this.drizzle.db
+      .select({ clientId: amazonSpAccounts.clientId })
+      .from(amazonSpAccounts)
+      .where(
+        and(
+          eq(amazonSpAccounts.isActive, true),
+          inArray(amazonSpAccounts.clientId, clientIds),
+        ),
+      );
+    const connected = new Set(connectedRows.map((r) => r.clientId));
+
+    const salesRows = await this.drizzle.db
+      .select({
+        clientId: amazonSpAccounts.clientId,
+        totalSales: sql<string>`COALESCE(SUM(${spSalesDaily.totalSales}), 0)`,
+      })
+      .from(spSalesDaily)
+      .innerJoin(
+        amazonSpAccounts,
+        eq(spSalesDaily.amazonSpAccountId, amazonSpAccounts.id),
+      )
+      .where(
+        and(
+          inArray(amazonSpAccounts.clientId, clientIds),
+          gte(spSalesDaily.date, from),
+          lte(spSalesDaily.date, to),
+        ),
+      )
+      .groupBy(amazonSpAccounts.clientId);
+
+    const totalSalesByClient = new Map<string, number>();
+    for (const row of salesRows) {
+      totalSalesByClient.set(row.clientId, Number(row.totalSales));
+    }
+
+    return { connected, totalSalesByClient };
+  }
+
+  // null = not SP-API connected (genuinely unknown, never fabricated as 0).
+  // Floored at 0 (with a warning) when SP-API total sales come in under PPC
+  // revenue — expected on recent days given the two APIs' different
+  // attribution timing, not a bug to chase perfectly.
+  private resolveClientOrgRev(
+    clientId: string,
+    ppcRev: number,
+    connected: Set<string>,
+    totalSalesByClient: Map<string, number>,
+  ): number | null {
+    if (!connected.has(clientId)) return null;
+
+    const totalSales = totalSalesByClient.get(clientId) ?? 0;
+    const { orgRev, floored } = floorOrgRev(totalSales, ppcRev);
+    if (floored) {
+      this.logger.warn(
+        `Client ${clientId}: organic revenue floored at 0 (SP-API total sales ${totalSales} < PPC revenue ${ppcRev}) — likely attribution timing drift between SP-API and Ads API.`,
+      );
+    }
+    return orgRev;
   }
 
   private buildChQuery(profileIds: string[], from: string, to: string): string {

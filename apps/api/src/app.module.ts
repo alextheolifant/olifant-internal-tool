@@ -12,6 +12,7 @@ import { MetricsModule } from './modules/metrics/metrics.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { AiModule } from './modules/ai/ai.module';
+import { SpApiModule } from './modules/sp-api/sp-api.module';
 import { ProposalsModule } from './modules/proposals/proposals.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -36,6 +37,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     CampaignsModule,
     SyncModule,
     AiModule,
+    SpApiModule,
     ProposalsModule,
     ReportsModule,
     NotificationsModule,

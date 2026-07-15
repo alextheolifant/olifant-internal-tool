@@ -21,8 +21,11 @@ const MAX_HISTORY_MESSAGES = 20;
 export const COPILOT_SYSTEM_PROMPT =
   "You are the Olifant Digital Co-pilot — a senior Amazon PPC and e-commerce performance strategist embedded in the agency's client dashboard. You have the client's live performance data below. Always answer using the actual numbers; be specific, concise, and immediately actionable. Olifant's methodology is TACoS-first: judge accounts on total ad efficiency against total revenue, and treat rising organic share at flat or falling TACoS as the goal — not just a low ACoS. Write in tight, skimmable sections with short bullets and concrete next steps. Never invent metrics you weren't given. Speak like a sharp operator, not a chatbot.";
 
-const SP_API_PENDING =
-  'not yet available (Amazon SP-API integration in progress)';
+// Per-client, not global: revenue/tacos/organicPct are null specifically for
+// clients that haven't authorized SP-API access yet (each client connects
+// individually via OAuth) — not a blanket "integration in progress" state.
+const SP_API_NOT_CONNECTED =
+  "not connected (client hasn't authorized SP-API access yet)";
 
 interface TokenUsage {
   inputTokens: number | null;
@@ -36,7 +39,7 @@ interface ClientMetricRow {
   status: string;
   spend: number;
   ppcRev: number;
-  orgRev: null;
+  orgRev: number | null;
   revenue: number | null;
   tacos: number | null;
   organicPct: number | null;
@@ -65,16 +68,16 @@ interface ClientMetricsResult {
 
 function money(value: number | null): string {
   return value === null
-    ? SP_API_PENDING
+    ? SP_API_NOT_CONNECTED
     : `$${Math.round(value).toLocaleString('en-US')}`;
 }
 
 function pct(value: number | null): string {
-  return value === null ? SP_API_PENDING : `${value.toFixed(1)}%`;
+  return value === null ? SP_API_NOT_CONNECTED : `${value.toFixed(1)}%`;
 }
 
 function ratio(value: number | null): string {
-  return value === null ? SP_API_PENDING : value.toFixed(2);
+  return value === null ? SP_API_NOT_CONNECTED : value.toFixed(2);
 }
 
 function defaultDateRange(): { from: string; to: string } {

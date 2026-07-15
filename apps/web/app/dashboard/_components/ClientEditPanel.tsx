@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import type { ClientRow, ClientStatus, Tier } from "../_lib/types";
 import { statusTokens, tierTokens } from "../_lib/theme";
+import { ConnectAmazonSection } from "./ConnectAmazonSection";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -230,6 +231,10 @@ export function ClientEditPanel({ client, isOpen, onClose, onSave }: ClientEditP
               </div>
               <p className="text-[11px] text-neutral-400">Monthly revenue goal shown in the Revenue column.</p>
             </div>
+
+            <div className="border-t border-neutral-100" />
+
+            <ConnectAmazonSection clientId={client.id} />
 
             {error && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[12px] text-red-700">

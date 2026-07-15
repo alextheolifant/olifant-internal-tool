@@ -180,6 +180,10 @@ export const syncLogs = pgTable(
       () => amazonAdsAccounts.id,
       { onDelete: 'cascade' },
     ),
+    amazonSpAccountId: uuid('amazon_sp_account_id').references(
+      () => amazonSpAccounts.id,
+      { onDelete: 'cascade' },
+    ),
     syncType: syncTypeEnum('sync_type').notNull(),
     status: syncStatusEnum('status').notNull().default('pending'),
     startedAt: timestamp('started_at', { withTimezone: true })
@@ -191,6 +195,7 @@ export const syncLogs = pgTable(
   },
   (t) => [
     index('idx_sync_log_account').on(t.amazonAdsAccountId),
+    index('idx_sync_log_sp_account').on(t.amazonSpAccountId),
     index('idx_sync_log_status').on(t.status),
   ],
 );
@@ -214,7 +219,10 @@ export const amazonSpAccounts = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (t) => [index('idx_sp_account_client').on(t.clientId)],
+  (t) => [
+    index('idx_sp_account_client').on(t.clientId),
+    uniqueIndex('uq_sp_account_selling_partner').on(t.sellingPartnerId),
+  ],
 );
 
 // ─── Relations ───────────────────────────────────────────────────────────────
@@ -261,15 +269,20 @@ export const syncLogsRelations = relations(syncLogs, ({ one }) => ({
     fields: [syncLogs.amazonAdsAccountId],
     references: [amazonAdsAccounts.id],
   }),
+  amazonSpAccount: one(amazonSpAccounts, {
+    fields: [syncLogs.amazonSpAccountId],
+    references: [amazonSpAccounts.id],
+  }),
 }));
 
 export const amazonSpAccountsRelations = relations(
   amazonSpAccounts,
-  ({ one }) => ({
+  ({ one, many }) => ({
     client: one(clients, {
       fields: [amazonSpAccounts.clientId],
       references: [clients.id],
     }),
+    syncLogs: many(syncLogs),
   }),
 );
 
@@ -301,6 +314,83 @@ export const adsReportRequests = pgTable(
     index('idx_report_req_account').on(t.amazonAdsAccountId),
     // Partial unique index (WHERE status IN ('PENDING','PROCESSING')) is added
     // manually in the migration — Drizzle doesn't support partial index WHERE clauses.
+  ],
+);
+
+export const spReportRequests = pgTable(
+  'sp_report_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    amazonSpAccountId: uuid('amazon_sp_account_id')
+      .notNull()
+      .references(() => amazonSpAccounts.id, { onDelete: 'cascade' }),
+    region: varchar('region', { length: 3 }).notNull(),
+    reportId: varchar('report_id', { length: 255 }).notNull(),
+    reportDocumentId: varchar('report_document_id', { length: 255 }),
+    startDate: date('start_date').notNull(),
+    endDate: date('end_date').notNull(),
+    // SP-API's own processingStatus values — different from ads_report_requests'
+    // PENDING/PROCESSING, do not conflate the two.
+    status: varchar('status', { length: 20 }).notNull().default('IN_QUEUE'),
+    requestedAt: timestamp('requested_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    errorMessage: text('error_message'),
+  },
+  (t) => [
+    index('idx_sp_report_req_status').on(t.status),
+    index('idx_sp_report_req_account').on(t.amazonSpAccountId),
+    // Partial unique index (WHERE status IN ('IN_QUEUE','IN_PROGRESS')) is added
+    // manually in the migration — Drizzle doesn't support partial index WHERE clauses.
+  ],
+);
+
+export const spSalesDaily = pgTable(
+  'sp_sales_daily',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    amazonSpAccountId: uuid('amazon_sp_account_id')
+      .notNull()
+      .references(() => amazonSpAccounts.id, { onDelete: 'cascade' }),
+    date: date('date').notNull(),
+    totalSales: numeric('total_sales', { precision: 12, scale: 4 })
+      .notNull()
+      .default('0'),
+    unitsOrdered: integer('units_ordered').notNull().default(0),
+    orders: integer('orders').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('uq_sp_sales_account_date').on(t.amazonSpAccountId, t.date),
+    index('idx_sp_sales_date').on(t.date),
+  ],
+);
+
+export const spInventory = pgTable(
+  'sp_inventory',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    amazonSpAccountId: uuid('amazon_sp_account_id')
+      .notNull()
+      .references(() => amazonSpAccounts.id, { onDelete: 'cascade' }),
+    asin: varchar('asin', { length: 20 }).notNull(),
+    sellerSku: varchar('seller_sku', { length: 255 }),
+    fulfillableQuantity: integer('fulfillable_quantity').notNull().default(0),
+    totalQuantity: integer('total_quantity').notNull().default(0),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('uq_sp_inventory_account_asin').on(t.amazonSpAccountId, t.asin),
+    index('idx_sp_inventory_account').on(t.amazonSpAccountId),
   ],
 );
 

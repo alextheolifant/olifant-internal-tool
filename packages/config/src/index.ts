@@ -14,6 +14,13 @@ export const apiEnvSchema = baseEnvSchema.extend({
   ANTHROPIC_API_KEY: z.string().startsWith('sk-'),
   TEMPORAL_ADDRESS: z.string().default('localhost:7233'),
   TEMPORAL_NAMESPACE: z.string().default('default'),
+  SP_API_APPLICATION_ID: z.string().min(1),
+  SP_API_CLIENT_ID: z.string().min(1),
+  SP_API_CLIENT_SECRET: z.string().min(1),
+  // 32-byte base64 key, shared with services/sync-sp-api, for AES-256-GCM
+  // encryption of amazon_sp_accounts.refresh_token.
+  SP_TOKEN_ENCRYPTION_KEY: z.string().min(1),
+  WEB_APP_URL: z.string().url().default('http://localhost:3000'),
 });
 
 export const webEnvSchema = baseEnvSchema.extend({

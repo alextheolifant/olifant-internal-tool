@@ -14,7 +14,7 @@ jest.mock('@anthropic-ai/sdk', () => ({
     .mockImplementation(() => ({ messages: { stream: jest.fn() } })),
 }));
 
-const PENDING = 'not yet available (Amazon SP-API integration in progress)';
+const PENDING = "not connected (client hasn't authorized SP-API access yet)";
 
 function buildMetricsFixture() {
   return {
