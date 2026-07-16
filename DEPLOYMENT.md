@@ -120,7 +120,7 @@ export YOUR_SECRET=$(parse "olifant/prod/your-secret-name")
 | Variable | Service | Source |
 |---|---|---|
 | `DATABASE_URL` | api | Secrets Manager → load-env.sh |
-| `REDIS_URL` | api | Hardcoded (`redis://redis:6379`) |
+| `REDIS_URL` | api | Secrets Manager → load-env.sh |
 | `CLICKHOUSE_URL` | api | Secrets Manager → load-env.sh |
 | `JWT_SECRET` | api | Secrets Manager → load-env.sh |
 | `JWT_REFRESH_SECRET` | api | Secrets Manager → load-env.sh |
