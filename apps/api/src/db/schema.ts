@@ -35,6 +35,7 @@ export const syncTypeEnum = pgEnum('sync_type', [
   'sp_orders',
   'sp_inventory',
   'ads_profiles',
+  'anomaly_detection',
 ]);
 
 export const syncStatusEnum = pgEnum('sync_status', [
@@ -47,6 +48,20 @@ export const syncStatusEnum = pgEnum('sync_status', [
 export const copilotMessageRoleEnum = pgEnum('copilot_message_role', [
   'user',
   'assistant',
+]);
+
+export const anomalyMetricEnum = pgEnum('anomaly_metric', [
+  'acos',
+  'spend',
+  'ctr',
+  'clicks',
+  'tacos',
+  'revenue',
+]);
+
+export const anomalySeverityEnum = pgEnum('anomaly_severity', [
+  'watch',
+  'act_now',
 ]);
 
 // ─── Tables ──────────────────────────────────────────────────────────────────
@@ -232,6 +247,7 @@ export const usersRelations = relations(users, () => ({}));
 export const clientsRelations = relations(clients, ({ many }) => ({
   amazonAdsAccounts: many(amazonAdsAccounts),
   amazonSpAccounts: many(amazonSpAccounts),
+  anomalies: many(anomalies),
 }));
 
 export const amazonAdsAccountsRelations = relations(
@@ -393,6 +409,47 @@ export const spInventory = pgTable(
     index('idx_sp_inventory_account').on(t.amazonSpAccountId),
   ],
 );
+
+export const anomalies = pgTable(
+  'anomalies',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    metric: anomalyMetricEnum('metric').notNull(),
+    baselineValue: numeric('baseline_value', { precision: 14, scale: 4 }).notNull(),
+    actualValue: numeric('actual_value', { precision: 14, scale: 4 }).notNull(),
+    // Null when the baseline was 0 — a "new activity" anomaly has no meaningful
+    // percentage; never fabricated as a sentinel number.
+    percentChange: numeric('percent_change', { precision: 10, scale: 2 }),
+    severity: anomalySeverityEnum('severity').notNull(),
+    explanation: text('explanation'),
+    detectedAt: timestamp('detected_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    resolved: boolean('resolved').notNull().default(false),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    // Open-anomaly lookup for the dedup check: "is there already an
+    // unresolved anomaly for this client+metric?"
+    index('idx_anomaly_open_lookup').on(t.clientId, t.metric, t.resolved),
+  ],
+);
+
+export const anomaliesRelations = relations(anomalies, ({ one }) => ({
+  client: one(clients, {
+    fields: [anomalies.clientId],
+    references: [clients.id],
+  }),
+}));
 
 export const copilotConversations = pgTable(
   'copilot_conversations',

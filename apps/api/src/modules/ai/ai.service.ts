@@ -377,4 +377,33 @@ export class AiService {
     if (deleted.length === 0)
       throw new NotFoundException('Conversation not found');
   }
+
+  /**
+   * One-shot, non-streaming explanation for a background job (anomaly
+   * detection) — reuses the same Anthropic client the Copilot uses, but
+   * deliberately separate from streamReply: no conversation history, no
+   * copilot_messages persistence, just a short direct answer.
+   */
+  async generateAnomalyExplanation(prompt: string): Promise<string> {
+    try {
+      const message = await this.anthropic.messages.create({
+        model: COPILOT_MODEL,
+        max_tokens: 200,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      return message.content
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text)
+        .join('')
+        .trim();
+    } catch (err) {
+      this.logger.error(
+        'Anomaly explanation generation failed',
+        err instanceof Error ? err.stack : err,
+      );
+      throw new ServiceUnavailableException(
+        'Failed to generate anomaly explanation.',
+      );
+    }
+  }
 }

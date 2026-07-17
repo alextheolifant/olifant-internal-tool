@@ -33,6 +33,16 @@ interface DerivedMetrics {
   totalOrders: number;
 }
 
+interface RawDailyTotals {
+  spend: number;
+  ppcRev: number;
+  ppcOrd: number;
+  clicks: number;
+  impr: number;
+}
+
+export type DailyMetricPoint = RawDailyTotals & DerivedMetrics;
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 // orgRev is null when there's no SP-API connection to compute it from (client
@@ -452,6 +462,124 @@ export class MetricsService {
       );
     }
     return orgRev;
+  }
+
+  // ── Daily metrics (anomaly detection) ─────────────────────────────────────────
+
+  // Per-day metrics for ONE client, reusing buildChQuery/deriveMetrics as-is —
+  // getClientMetrics collapses everything but spend into range totals, but
+  // baseline calculation needs the real daily values.
+  async getDailyMetricsForClient(
+    clientId: string,
+    from: string,
+    to: string,
+  ): Promise<Map<string, DailyMetricPoint>> {
+    const adsAccounts = await this.drizzle.db.query.amazonAdsAccounts.findMany({
+      where: and(
+        eq(amazonAdsAccounts.clientId, clientId),
+        eq(amazonAdsAccounts.isActive, true),
+      ),
+    });
+    const profileIds = adsAccounts.map((a) => a.profileId);
+
+    const chRows: ChRow[] =
+      profileIds.length > 0
+        ? await this.ch.query<ChRow>(this.buildChQuery(profileIds, from, to))
+        : [];
+
+    const byDate = new Map<string, RawDailyTotals>();
+    for (const row of chRows) {
+      const agg = byDate.get(row.date) ?? {
+        spend: 0,
+        ppcRev: 0,
+        ppcOrd: 0,
+        clicks: 0,
+        impr: 0,
+      };
+      agg.spend += Number(row.spend);
+      agg.ppcRev += Number(row.sales);
+      agg.ppcOrd += Number(row.orders);
+      agg.clicks += Number(row.clicks);
+      agg.impr += Number(row.impressions);
+      byDate.set(row.date, agg);
+    }
+
+    const { connected, totalSalesByDate } = await this.fetchOrganicSalesDaily(
+      clientId,
+      from,
+      to,
+    );
+
+    const result = new Map<string, DailyMetricPoint>();
+    for (const date of buildDateSeries(from, to)) {
+      const agg = byDate.get(date) ?? {
+        spend: 0,
+        ppcRev: 0,
+        ppcOrd: 0,
+        clicks: 0,
+        impr: 0,
+      };
+      const orgRev = connected
+        ? floorOrgRev(totalSalesByDate.get(date) ?? 0, agg.ppcRev).orgRev
+        : null;
+      const derived = deriveMetrics(
+        agg.spend,
+        agg.ppcRev,
+        agg.ppcOrd,
+        agg.clicks,
+        agg.impr,
+        orgRev,
+      );
+      result.set(date, { ...agg, ...derived });
+    }
+    return result;
+  }
+
+  // Same shape as fetchOrganicSalesInputs but grouped by date instead of
+  // aggregated over the whole range, and scoped to one client.
+  private async fetchOrganicSalesDaily(
+    clientId: string,
+    from: string,
+    to: string,
+  ): Promise<{ connected: boolean; totalSalesByDate: Map<string, number> }> {
+    const connectedRows = await this.drizzle.db
+      .select({ id: amazonSpAccounts.id })
+      .from(amazonSpAccounts)
+      .where(
+        and(
+          eq(amazonSpAccounts.isActive, true),
+          eq(amazonSpAccounts.clientId, clientId),
+        ),
+      )
+      .limit(1);
+    if (connectedRows.length === 0) {
+      return { connected: false, totalSalesByDate: new Map() };
+    }
+
+    const salesRows = await this.drizzle.db
+      .select({
+        date: spSalesDaily.date,
+        totalSales: sql<string>`COALESCE(SUM(${spSalesDaily.totalSales}), 0)`,
+      })
+      .from(spSalesDaily)
+      .innerJoin(
+        amazonSpAccounts,
+        eq(spSalesDaily.amazonSpAccountId, amazonSpAccounts.id),
+      )
+      .where(
+        and(
+          eq(amazonSpAccounts.clientId, clientId),
+          gte(spSalesDaily.date, from),
+          lte(spSalesDaily.date, to),
+        ),
+      )
+      .groupBy(spSalesDaily.date);
+
+    const totalSalesByDate = new Map<string, number>();
+    for (const row of salesRows) {
+      totalSalesByDate.set(row.date, Number(row.totalSales));
+    }
+    return { connected: true, totalSalesByDate };
   }
 
   private buildChQuery(profileIds: string[], from: string, to: string): string {

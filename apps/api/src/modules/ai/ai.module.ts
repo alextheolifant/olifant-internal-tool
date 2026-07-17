@@ -7,5 +7,6 @@ import { MetricsModule } from '../metrics/metrics.module';
   imports: [MetricsModule],
   controllers: [AiController],
   providers: [AiService],
+  exports: [AiService],
 })
 export class AiModule {}

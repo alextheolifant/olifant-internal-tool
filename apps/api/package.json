@@ -10,6 +10,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "ts-node -r tsconfig-paths/register src/db/seed.ts",
     "db:studio": "drizzle-kit studio",
+    "detect:anomalies": "ts-node -r tsconfig-paths/register src/scripts/detect-anomalies.ts",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",

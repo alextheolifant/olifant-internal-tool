@@ -113,6 +113,13 @@
       "when": 1784091865875,
       "tag": "0015_sp_account_selling_partner_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1784259812426,
+      "tag": "0016_anomalies_table",
+      "breakpoints": true
     }
   ]
 }

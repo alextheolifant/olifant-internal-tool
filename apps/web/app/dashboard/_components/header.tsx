@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { NAV_ITEMS } from "./nav-items";
 import DateFilter from "./date-filter";
 import UserMenu from "./user-menu";
+import { AlertsBell } from "./AlertsBell";
 import { useMarketplace } from "../_lib/marketplace-context";
 import { MARKETPLACE_LABELS } from "../_lib/types";
 import type { Marketplace } from "../_lib/types";
@@ -63,6 +64,7 @@ export default function Header() {
         )}
 
         <DateFilter />
+        <AlertsBell />
         <UserMenu />
       </div>
     </header>
