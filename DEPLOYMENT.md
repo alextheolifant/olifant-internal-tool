@@ -71,9 +71,9 @@ Always run migrations **before** deploying new API code that depends on the new 
 cd /opt/olifant/olifant-internal-tool
 git pull origin main
 
-# Run migrations
+# Run migrations (--build ensures the container has the latest migration files)
 source /opt/olifant/load-env.sh && \
-  docker compose -f docker-compose.prod.yml -f docker-compose.migrate.yml run --rm migrate
+  docker compose -f docker-compose.prod.yml -f docker-compose.migrate.yml run --rm --build migrate
 ```
 
 A `[✓] migrations applied successfully!` message confirms success.

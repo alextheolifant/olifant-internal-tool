@@ -1,12 +1,7 @@
 services:
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-
   api:
     build: { context: ., dockerfile: apps/api/Dockerfile }
     restart: unless-stopped
-    depends_on: [redis]
     environment:
       NODE_ENV: production
       PORT: 3001
