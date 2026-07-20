@@ -9,11 +9,16 @@ import Redis from 'ioredis';
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
-  client: Redis;
+  client!: Redis;
 
   onModuleInit() {
     const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
-    this.client = new Redis(url, { lazyConnect: true });
+    this.client = new Redis(url, {
+      lazyConnect: true,
+      connectTimeout: 3000,
+      commandTimeout: 3000,
+      maxRetriesPerRequest: 1,
+    });
     this.client.on('error', (err) =>
       this.logger.error('Redis connection error', err),
     );
