@@ -46,9 +46,9 @@ func RegionByName(region string) Region {
 	return Regions[0]
 }
 
-// Client handles communication with the Amazon SP-API. Every data-plane call
-// needs both an LWA access token (this file) and an AWS SigV4 signature
-// (sigv4.go) — unlike the Advertising API, a bearer token alone is not enough.
+// Client handles communication with the Amazon SP-API. Auth is LWA-only — a
+// bearer access token from this file passed via x-amz-access-token; Amazon
+// removed the AWS SigV4 signing requirement.
 type Client struct {
 	clientID     string
 	clientSecret string

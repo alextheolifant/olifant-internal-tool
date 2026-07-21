@@ -19,15 +19,9 @@ export class SpApiController {
   @UseGuards(JwtAuthGuard)
   async connect(
     @Param('clientId', ParseUUIDPipe) clientId: string,
-    @Query('marketplace') marketplace: string | undefined,
     @Query('region') region: string | undefined,
   ) {
-    const authorizationUrl = await this.spApiService.buildAuthorizationUrl(
-      clientId,
-      marketplace,
-      region,
-    );
-    return { authorizationUrl };
+    return this.spApiService.buildAuthorizationUrl(clientId, region);
   }
 
   // Amazon redirects the seller's browser here directly after consent — no

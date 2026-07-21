@@ -223,7 +223,10 @@ export const amazonSpAccounts = pgTable(
       .notNull()
       .references(() => clients.id, { onDelete: 'cascade' }),
     sellingPartnerId: varchar('selling_partner_id', { length: 255 }),
-    marketplace: varchar('marketplace', { length: 10 }),
+    // Real Amazon marketplace ID (e.g. "ATVPDKIKX0DER"), not a short country
+    // code — one seller authorization covers every marketplace they operate
+    // in within a region, so one row per (selling_partner_id, marketplace).
+    marketplace: varchar('marketplace', { length: 20 }),
     region: varchar('region', { length: 10 }),
     refreshToken: varchar('refresh_token', { length: 2048 }),
     isActive: boolean('is_active').notNull().default(true),
@@ -236,7 +239,10 @@ export const amazonSpAccounts = pgTable(
   },
   (t) => [
     index('idx_sp_account_client').on(t.clientId),
-    uniqueIndex('uq_sp_account_selling_partner').on(t.sellingPartnerId),
+    uniqueIndex('uq_sp_account_selling_partner_marketplace').on(
+      t.sellingPartnerId,
+      t.marketplace,
+    ),
   ],
 );
 

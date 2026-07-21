@@ -45,6 +45,59 @@ function buildRedisMock() {
   return { get, setex, client: { del } };
 }
 
+// Mocks fetch for both calls handleCallback makes, branching on URL — the LWA
+// token exchange, then the marketplaceParticipations lookup.
+function mockFetchSequence(opts: {
+  tokenOk?: boolean;
+  tokenStatus?: number;
+  accessToken?: string;
+  refreshToken?: string;
+  participationsOk?: boolean;
+  participationsStatus?: number;
+  marketplaceIds?: string[];
+}) {
+  const {
+    tokenOk = true,
+    tokenStatus = 200,
+    accessToken = 'Atza|IwEBIExampleAccessToken',
+    refreshToken = 'Atzr|IwEBIExampleRefreshToken',
+    participationsOk = true,
+    participationsStatus = 200,
+    marketplaceIds = ['ATVPDKIKX0DER'],
+  } = opts;
+
+  jest.spyOn(global, 'fetch').mockImplementation((input) => {
+    // The service only ever calls fetch(url: string, init) — never with a
+    // Request/URL object — so this reflects the real invariant.
+    const url = input as string;
+    if (url.includes('api.amazon.com/auth/o2/token')) {
+      return Promise.resolve({
+        ok: tokenOk,
+        status: tokenStatus,
+        json: () =>
+          Promise.resolve({
+            refresh_token: refreshToken,
+            access_token: accessToken,
+          }),
+      } as Response);
+    }
+    if (url.includes('/sellers/v1/marketplaceParticipations')) {
+      return Promise.resolve({
+        ok: participationsOk,
+        status: participationsStatus,
+        json: () =>
+          Promise.resolve({
+            payload: marketplaceIds.map((id) => ({
+              marketplace: { id },
+              participation: { isParticipating: true },
+            })),
+          }),
+      } as Response);
+    }
+    throw new Error(`unexpected fetch url: ${url}`);
+  });
+}
+
 describe('SpApiService', () => {
   let service: SpApiService;
   let drizzle: ReturnType<typeof buildDrizzleMock>;
@@ -77,15 +130,16 @@ describe('SpApiService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('infers marketplace/region from a single distinct Ads account and stores state', async () => {
+    it('infers region from a single distinct Ads account region and stores state', async () => {
       drizzle._mocks.clientsFindFirst.mockResolvedValue({ id: 'client-1' });
       drizzle._mocks.adsAccountsFindMany.mockResolvedValue([
-        { marketplace: 'US', region: 'na' },
-        { marketplace: 'US', region: 'na' },
+        { region: 'na' },
+        { region: 'na' },
       ]);
 
-      const url = await service.buildAuthorizationUrl('client-1');
-      const parsed = new URL(url);
+      const result = await service.buildAuthorizationUrl('client-1');
+      expect(result.region).toBe('na');
+      const parsed = new URL(result.authorizationUrl);
 
       expect(parsed.origin + parsed.pathname).toBe(
         'https://sellercentral.amazon.com/apps/authorize/consent',
@@ -100,28 +154,20 @@ describe('SpApiService', () => {
       expect(redis.setex).toHaveBeenCalledWith(
         `sp-api:oauth-state:${state}`,
         600,
-        JSON.stringify({
-          clientId: 'client-1',
-          marketplace: 'US',
-          region: 'na',
-        }),
+        JSON.stringify({ clientId: 'client-1', region: 'na' }),
       );
     });
 
-    it('uses the marketplace/region override instead of inferring when both are given', async () => {
+    it('uses the region override instead of inferring when given', async () => {
       drizzle._mocks.clientsFindFirst.mockResolvedValue({ id: 'client-1' });
 
-      await service.buildAuthorizationUrl('client-1', 'UK', 'eu');
+      await service.buildAuthorizationUrl('client-1', 'eu');
 
       expect(drizzle._mocks.adsAccountsFindMany).not.toHaveBeenCalled();
       expect(redis.setex).toHaveBeenCalledWith(
         expect.stringContaining('sp-api:oauth-state:'),
         600,
-        JSON.stringify({
-          clientId: 'client-1',
-          marketplace: 'UK',
-          region: 'eu',
-        }),
+        JSON.stringify({ clientId: 'client-1', region: 'eu' }),
       );
     });
 
@@ -134,16 +180,29 @@ describe('SpApiService', () => {
       );
     });
 
-    it('throws BadRequestException when the client spans multiple marketplaces and no override', async () => {
+    it('throws BadRequestException when the client spans multiple regions and no override', async () => {
       drizzle._mocks.clientsFindFirst.mockResolvedValue({ id: 'client-1' });
       drizzle._mocks.adsAccountsFindMany.mockResolvedValue([
-        { marketplace: 'US', region: 'na' },
-        { marketplace: 'UK', region: 'eu' },
+        { region: 'na' },
+        { region: 'eu' },
       ]);
 
       await expect(service.buildAuthorizationUrl('client-1')).rejects.toThrow(
         BadRequestException,
       );
+    });
+
+    it('does NOT throw for multiple Ads accounts sharing the same region (e.g. US+CA+MX)', async () => {
+      drizzle._mocks.clientsFindFirst.mockResolvedValue({ id: 'client-1' });
+      drizzle._mocks.adsAccountsFindMany.mockResolvedValue([
+        { region: 'na' },
+        { region: 'na' },
+        { region: 'na' },
+      ]);
+
+      await expect(
+        service.buildAuthorizationUrl('client-1'),
+      ).resolves.toBeTruthy();
     });
   });
 
@@ -156,19 +215,14 @@ describe('SpApiService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('exchanges the code, encrypts the refresh token, upserts the account, and single-uses the state', async () => {
+    it('creates one account row per marketplace the seller actually granted — a single consent, not one per marketplace', async () => {
       redis.get.mockResolvedValue(
-        JSON.stringify({
-          clientId: 'client-1',
-          marketplace: 'US',
-          region: 'na',
-        }),
+        JSON.stringify({ clientId: 'client-1', region: 'na' }),
       );
-      jest.spyOn(global, 'fetch').mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({ refresh_token: 'Atzr|IwEBIExampleRefreshToken' }),
-      } as Response);
+      mockFetchSequence({
+        refreshToken: 'Atzr|IwEBIExampleRefreshToken',
+        marketplaceIds: ['ATVPDKIKX0DER', 'A2EUQ1WTGCTBG2', 'A1AM78C64UM0Y8'], // US, CA, MX
+      });
 
       const clientId = await service.handleCallback(
         'auth-code',
@@ -181,35 +235,103 @@ describe('SpApiService', () => {
         'sp-api:oauth-state:good-state',
       );
 
-      expect(drizzle._mocks.insert).toHaveBeenCalled();
+      // One insert per marketplace — not one per authorization.
+      expect(drizzle._mocks.insert).toHaveBeenCalledTimes(3);
       const typedValues = drizzle._mocks.values as jest.Mock<
         unknown,
         [InsertedSpAccount]
       >;
-      const insertedValues = typedValues.mock.calls[0][0];
-      expect(insertedValues.clientId).toBe('client-1');
-      expect(insertedValues.sellingPartnerId).toBe('A1SELLER');
-      expect(insertedValues.marketplace).toBe('US');
-      expect(insertedValues.region).toBe('na');
-      expect(decrypt(insertedValues.refreshToken)).toBe(
-        'Atzr|IwEBIExampleRefreshToken',
+      const insertedMarketplaces = typedValues.mock.calls.map(
+        (call) => call[0].marketplace,
       );
+      expect(insertedMarketplaces).toEqual([
+        'ATVPDKIKX0DER',
+        'A2EUQ1WTGCTBG2',
+        'A1AM78C64UM0Y8',
+      ]);
+
+      for (const call of typedValues.mock.calls) {
+        const inserted = call[0];
+        expect(inserted.clientId).toBe('client-1');
+        expect(inserted.sellingPartnerId).toBe('A1SELLER');
+        expect(inserted.region).toBe('na');
+        expect(decrypt(inserted.refreshToken)).toBe(
+          'Atzr|IwEBIExampleRefreshToken',
+        );
+      }
+    });
+
+    it('only stores marketplaces the seller is actively participating in', async () => {
+      redis.get.mockResolvedValue(
+        JSON.stringify({ clientId: 'client-1', region: 'na' }),
+      );
+      jest.spyOn(global, 'fetch').mockImplementation((input) => {
+        const url = input as string;
+        if (url.includes('auth/o2/token')) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({ refresh_token: 'rt', access_token: 'at' }),
+          } as Response);
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              payload: [
+                {
+                  marketplace: { id: 'ATVPDKIKX0DER' },
+                  participation: { isParticipating: true },
+                },
+                {
+                  marketplace: { id: 'A2EUQ1WTGCTBG2' },
+                  participation: { isParticipating: false },
+                },
+              ],
+            }),
+        } as Response);
+      });
+
+      await service.handleCallback('auth-code', 'A1SELLER', 'good-state');
+
+      expect(drizzle._mocks.insert).toHaveBeenCalledTimes(1);
+      const typedValues = drizzle._mocks.values as jest.Mock<
+        unknown,
+        [InsertedSpAccount]
+      >;
+      expect(typedValues.mock.calls[0][0].marketplace).toBe('ATVPDKIKX0DER');
+    });
+
+    it('throws BadRequestException when no marketplaces are participating', async () => {
+      redis.get.mockResolvedValue(
+        JSON.stringify({ clientId: 'client-1', region: 'na' }),
+      );
+      mockFetchSequence({ marketplaceIds: [] });
+
+      await expect(
+        service.handleCallback('auth-code', 'A1SELLER', 'good-state'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('throws BadRequestException when the LWA token exchange fails', async () => {
       redis.get.mockResolvedValue(
-        JSON.stringify({
-          clientId: 'client-1',
-          marketplace: 'US',
-          region: 'na',
-        }),
+        JSON.stringify({ clientId: 'client-1', region: 'na' }),
       );
-      jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue({ ok: false, status: 400 } as Response);
+      mockFetchSequence({ tokenOk: false, tokenStatus: 400 });
 
       await expect(
         service.handleCallback('bad-code', 'A1SELLER', 'good-state'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException when marketplaceParticipations fails', async () => {
+      redis.get.mockResolvedValue(
+        JSON.stringify({ clientId: 'client-1', region: 'na' }),
+      );
+      mockFetchSequence({ participationsOk: false, participationsStatus: 403 });
+
+      await expect(
+        service.handleCallback('auth-code', 'A1SELLER', 'good-state'),
       ).rejects.toThrow(BadRequestException);
     });
   });
