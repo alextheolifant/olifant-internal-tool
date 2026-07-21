@@ -40,16 +40,14 @@ type accountContext struct {
 
 // SalesOrchestrator drives the two-phase GET_SALES_AND_TRAFFIC_REPORT sync.
 type SalesOrchestrator struct {
-	signer          *amazon.RequestSigner
 	writer          *db.Writer
 	lwaClientID     string
 	lwaClientSecret string
 	encryptionKey   []byte
 }
 
-func NewSalesOrchestrator(signer *amazon.RequestSigner, w *db.Writer, lwaClientID, lwaClientSecret string, encryptionKey []byte) *SalesOrchestrator {
+func NewSalesOrchestrator(w *db.Writer, lwaClientID, lwaClientSecret string, encryptionKey []byte) *SalesOrchestrator {
 	return &SalesOrchestrator{
-		signer:          signer,
 		writer:          w,
 		lwaClientID:     lwaClientID,
 		lwaClientSecret: lwaClientSecret,
@@ -137,7 +135,7 @@ func (o *SalesOrchestrator) SyncSales(ctx context.Context, accounts []db.SpAccou
 				return
 			}
 
-			reportID, err := ac.client.RequestReport(ctx, o.signer, token, ac.region, a.Marketplace, startDate, endDate)
+			reportID, err := ac.client.RequestReport(ctx, token, ac.region, a.Marketplace, startDate, endDate)
 			if err != nil {
 				_ = o.writer.CompleteSyncFailure(ctx, logID, 0, err.Error())
 				out.err = fmt.Errorf("request report: %w", err)
@@ -230,7 +228,7 @@ func (o *SalesOrchestrator) pollPendingReports(ctx context.Context, deadline tim
 					return
 				}
 
-				status, err := ac.client.GetReportStatus(ctx, o.signer, token, ac.region, r.ReportID)
+				status, err := ac.client.GetReportStatus(ctx, token, ac.region, r.ReportID)
 				if err != nil {
 					pr.err = fmt.Errorf("poll status: %w", err)
 					pollCh <- pr
@@ -298,7 +296,7 @@ func (o *SalesOrchestrator) processCompleted(ctx context.Context, ac *accountCon
 		return 0, fmt.Errorf("get token: %w", err)
 	}
 
-	records, err := ac.client.DownloadReport(ctx, o.signer, token, ac.region, reportDocumentID)
+	records, err := ac.client.DownloadReport(ctx, token, ac.region, reportDocumentID)
 	if err != nil {
 		return 0, fmt.Errorf("download report: %w", err)
 	}

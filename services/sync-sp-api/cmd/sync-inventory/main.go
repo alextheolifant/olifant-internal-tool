@@ -14,7 +14,6 @@ import (
 	"log"
 	"os"
 
-	"olifant/sync-sp-api/internal/amazon"
 	"olifant/sync-sp-api/internal/db"
 	"olifant/sync-sp-api/internal/sync"
 )
@@ -23,17 +22,6 @@ func main() {
 	ctx := context.Background()
 
 	encryptionKey := decodeKey(requireEnv("SP_TOKEN_ENCRYPTION_KEY"))
-
-	signer, err := amazon.NewRequestSigner(
-		ctx,
-		requireEnv("SP_API_AWS_ACCESS_KEY_ID"),
-		requireEnv("SP_API_AWS_SECRET_ACCESS_KEY"),
-		requireEnv("SP_API_ROLE_ARN"),
-		envOr("SP_API_STS_REGION", "us-east-1"),
-	)
-	if err != nil {
-		log.Fatalf("build request signer: %v", err)
-	}
 
 	writer, err := db.NewWriter(ctx, requireEnv("DATABASE_URL"))
 	if err != nil {
@@ -48,7 +36,6 @@ func main() {
 	log.Printf("found %d active accounts", len(accounts))
 
 	orchestrator := sync.NewInventoryOrchestrator(
-		signer,
 		writer,
 		requireEnv("SP_API_CLIENT_ID"),
 		requireEnv("SP_API_CLIENT_SECRET"),
@@ -66,13 +53,6 @@ func requireEnv(key string) string {
 		log.Fatalf("required env var %s is not set", key)
 	}
 	return v
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }
 
 func decodeKey(b64 string) []byte {

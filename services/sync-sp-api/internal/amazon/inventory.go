@@ -49,7 +49,7 @@ type inventoryPage struct {
 // inventory for a marketplace. Pass nextToken="" for the first page.
 // granularityId is the marketplaceId — VERIFIED required alongside
 // granularityType and marketplaceIds; calling without them 400s.
-func (c *Client) GetInventorySummaries(ctx context.Context, signer *RequestSigner, accessToken string, region Region, marketplaceID, nextToken string) ([]InventorySummary, string, error) {
+func (c *Client) GetInventorySummaries(ctx context.Context, accessToken string, region Region, marketplaceID, nextToken string) ([]InventorySummary, string, error) {
 	page, err := withRetry(ctx, func() (inventoryPage, error) {
 		q := url.Values{
 			"details":         {"false"},
@@ -67,10 +67,6 @@ func (c *Client) GetInventorySummaries(ctx context.Context, signer *RequestSigne
 			return inventoryPage{}, fmt.Errorf("build request: %w", err)
 		}
 		req.Header.Set("x-amz-access-token", accessToken)
-
-		if err := signer.Sign(ctx, req, nil, region.AWSRegion); err != nil {
-			return inventoryPage{}, fmt.Errorf("sign request: %w", err)
-		}
 
 		httpResp, err := c.httpClient.Do(req)
 		if err != nil {

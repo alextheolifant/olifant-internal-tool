@@ -82,7 +82,7 @@ A `[✓] migrations applied successfully!` message confirms success.
 
 ```bash
 source /opt/olifant/load-env.sh
-docker run --rm postgres:16-alpine psql "$DATABASE_URL" -c "\dt"
+psql "$DATABASE_URL" -c "\dt"
 ```
 
 ---

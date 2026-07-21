@@ -22,16 +22,14 @@ type InventoryResult struct {
 // InventoryOrchestrator drives the (simpler, non-report-based) FBA inventory
 // sync: one direct paginated call per account, no submit/poll cycle.
 type InventoryOrchestrator struct {
-	signer          *amazon.RequestSigner
 	writer          *db.Writer
 	lwaClientID     string
 	lwaClientSecret string
 	encryptionKey   []byte
 }
 
-func NewInventoryOrchestrator(signer *amazon.RequestSigner, w *db.Writer, lwaClientID, lwaClientSecret string, encryptionKey []byte) *InventoryOrchestrator {
+func NewInventoryOrchestrator(w *db.Writer, lwaClientID, lwaClientSecret string, encryptionKey []byte) *InventoryOrchestrator {
 	return &InventoryOrchestrator{
-		signer:          signer,
 		writer:          w,
 		lwaClientID:     lwaClientID,
 		lwaClientSecret: lwaClientSecret,
@@ -95,7 +93,7 @@ func (o *InventoryOrchestrator) syncAccountInventory(ctx context.Context, client
 			return written, fmt.Errorf("get token: %w", err)
 		}
 
-		summaries, next, err := client.GetInventorySummaries(ctx, o.signer, token, region, a.Marketplace, nextToken)
+		summaries, next, err := client.GetInventorySummaries(ctx, token, region, a.Marketplace, nextToken)
 		if err != nil {
 			return written, fmt.Errorf("get inventory summaries: %w", err)
 		}

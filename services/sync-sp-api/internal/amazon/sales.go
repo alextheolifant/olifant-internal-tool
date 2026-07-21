@@ -45,7 +45,7 @@ type reportDocumentResponse struct {
 
 // RequestReport submits a GET_SALES_AND_TRAFFIC_REPORT for one account and
 // returns Amazon's reportId.
-func (c *Client) RequestReport(ctx context.Context, signer *RequestSigner, accessToken string, region Region, marketplaceID, startDate, endDate string) (string, error) {
+func (c *Client) RequestReport(ctx context.Context, accessToken string, region Region, marketplaceID, startDate, endDate string) (string, error) {
 	body, err := json.Marshal(reportRequestBody{
 		ReportType:     salesReportType,
 		DataStartTime:  startDate,
@@ -63,10 +63,6 @@ func (c *Client) RequestReport(ctx context.Context, signer *RequestSigner, acces
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("x-amz-access-token", accessToken)
-
-		if err := signer.Sign(ctx, req, body, region.AWSRegion); err != nil {
-			return nil, fmt.Errorf("sign request: %w", err)
-		}
 
 		httpResp, err := c.httpClient.Do(req)
 		if err != nil {
@@ -95,17 +91,13 @@ func (c *Client) RequestReport(ctx context.Context, signer *RequestSigner, acces
 
 // GetReportStatus polls one report's processing status. Once DONE,
 // ReportDocumentID is populated in this same response — no extra call needed.
-func (c *Client) GetReportStatus(ctx context.Context, signer *RequestSigner, accessToken string, region Region, reportID string) (*ReportStatus, error) {
+func (c *Client) GetReportStatus(ctx context.Context, accessToken string, region Region, reportID string) (*ReportStatus, error) {
 	return withRetry(ctx, func() (*ReportStatus, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, region.BaseURL+"/reports/2021-06-30/reports/"+reportID, nil)
 		if err != nil {
 			return nil, fmt.Errorf("build request: %w", err)
 		}
 		req.Header.Set("x-amz-access-token", accessToken)
-
-		if err := signer.Sign(ctx, req, nil, region.AWSRegion); err != nil {
-			return nil, fmt.Errorf("sign request: %w", err)
-		}
 
 		httpResp, err := c.httpClient.Do(req)
 		if err != nil {
@@ -132,17 +124,13 @@ func (c *Client) GetReportStatus(ctx context.Context, signer *RequestSigner, acc
 // downloads and decompresses (if needed) the underlying file. Amazon
 // documents GET_SALES_AND_TRAFFIC_REPORT as tab-delimited, not JSON, unlike
 // the Ads Reporting API — VERIFY the real downloaded shape during testing.
-func (c *Client) DownloadReport(ctx context.Context, signer *RequestSigner, accessToken string, region Region, reportDocumentID string) ([]map[string]string, error) {
+func (c *Client) DownloadReport(ctx context.Context, accessToken string, region Region, reportDocumentID string) ([]map[string]string, error) {
 	doc, err := withRetry(ctx, func() (*reportDocumentResponse, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, region.BaseURL+"/reports/2021-06-30/documents/"+reportDocumentID, nil)
 		if err != nil {
 			return nil, fmt.Errorf("build document request: %w", err)
 		}
 		req.Header.Set("x-amz-access-token", accessToken)
-
-		if err := signer.Sign(ctx, req, nil, region.AWSRegion); err != nil {
-			return nil, fmt.Errorf("sign request: %w", err)
-		}
 
 		httpResp, err := c.httpClient.Do(req)
 		if err != nil {

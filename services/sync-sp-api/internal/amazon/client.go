@@ -23,17 +23,16 @@ const (
 // are DIFFERENT hosts from the Advertising API's regional endpoints — do not
 // conflate the two, even though the na/eu/fe grouping concept is the same.
 type Region struct {
-	Name      string
-	BaseURL   string
-	AWSRegion string // SigV4 signing region for this SP-API region
+	Name    string
+	BaseURL string
 }
 
 // Regions is the canonical list. NA covers US/CA/MX/BR; EU covers UK/DE/FR
 // and others; FE covers JP/AU/SG.
 var Regions = []Region{
-	{Name: "na", BaseURL: "https://sellingpartnerapi-na.amazon.com", AWSRegion: "us-east-1"},
-	{Name: "eu", BaseURL: "https://sellingpartnerapi-eu.amazon.com", AWSRegion: "eu-west-1"},
-	{Name: "fe", BaseURL: "https://sellingpartnerapi-fe.amazon.com", AWSRegion: "us-west-2"},
+	{Name: "na", BaseURL: "https://sellingpartnerapi-na.amazon.com"},
+	{Name: "eu", BaseURL: "https://sellingpartnerapi-eu.amazon.com"},
+	{Name: "fe", BaseURL: "https://sellingpartnerapi-fe.amazon.com"},
 }
 
 // RegionByName returns the Region for a stored region string ('na', 'eu', 'fe').
