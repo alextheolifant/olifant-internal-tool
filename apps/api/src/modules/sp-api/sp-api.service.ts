@@ -222,16 +222,31 @@ export class SpApiService {
       headers: { 'x-amz-access-token': accessToken },
     });
 
+    const rawBody = await res.text();
+
     if (!res.ok) {
       this.logger.error(
-        `marketplaceParticipations failed with status ${res.status}`,
+        `marketplaceParticipations failed with status ${res.status}: ${rawBody}`,
       );
       throw new BadRequestException('Failed to look up seller marketplaces');
     }
 
-    const body = (await res.json()) as MarketplaceParticipationsResponse;
-    return body.payload
-      .filter((p) => p.participation.isParticipating)
-      .map((p) => p.marketplace.id);
+    // Logged at info level (not just on failure) until this documented shape
+    // has been confirmed against a real live response — remove once verified.
+    this.logger.log(`marketplaceParticipations raw response: ${rawBody}`);
+
+    try {
+      const body = JSON.parse(rawBody) as MarketplaceParticipationsResponse;
+      return body.payload
+        .filter((p) => p.participation.isParticipating)
+        .map((p) => p.marketplace.id);
+    } catch (err) {
+      this.logger.error(
+        `marketplaceParticipations response did not match the expected shape: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      throw new BadRequestException('Failed to look up seller marketplaces');
+    }
   }
 }

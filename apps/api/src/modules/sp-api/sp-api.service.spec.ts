@@ -85,13 +85,15 @@ function mockFetchSequence(opts: {
       return Promise.resolve({
         ok: participationsOk,
         status: participationsStatus,
-        json: () =>
-          Promise.resolve({
-            payload: marketplaceIds.map((id) => ({
-              marketplace: { id },
-              participation: { isParticipating: true },
-            })),
-          }),
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({
+              payload: marketplaceIds.map((id) => ({
+                marketplace: { id },
+                participation: { isParticipating: true },
+              })),
+            }),
+          ),
       } as Response);
     }
     throw new Error(`unexpected fetch url: ${url}`);
@@ -276,19 +278,21 @@ describe('SpApiService', () => {
         }
         return Promise.resolve({
           ok: true,
-          json: () =>
-            Promise.resolve({
-              payload: [
-                {
-                  marketplace: { id: 'ATVPDKIKX0DER' },
-                  participation: { isParticipating: true },
-                },
-                {
-                  marketplace: { id: 'A2EUQ1WTGCTBG2' },
-                  participation: { isParticipating: false },
-                },
-              ],
-            }),
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                payload: [
+                  {
+                    marketplace: { id: 'ATVPDKIKX0DER' },
+                    participation: { isParticipating: true },
+                  },
+                  {
+                    marketplace: { id: 'A2EUQ1WTGCTBG2' },
+                    participation: { isParticipating: false },
+                  },
+                ],
+              }),
+            ),
         } as Response);
       });
 
