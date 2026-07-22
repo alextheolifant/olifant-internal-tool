@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useCallback, useMemo, useTransition } from "react";
+import { useState, useEffect, useCallback, useMemo, useTransition } from "react";
 import type { ClientRow, ViewMode, ClientStatus } from "../_lib/types";
 import { computeTotals } from "../_lib/totals";
 import { apiFetch } from "@/lib/api";
@@ -13,7 +13,6 @@ import { SummaryCards } from "./SummaryCards";
 import { ClientTable } from "./ClientTable";
 import { TrendsPanel } from "./TrendsPanel";
 import { ClientEditPanel, type ClientFormValues } from "./ClientEditPanel";
-import { ConnectionStatusBanner } from "./ConnectionStatusBanner";
 
 // ── Status / Tier maps (form values → API enum strings) ───────────────────────
 
@@ -121,9 +120,6 @@ export function AllClientsView() {
 
   return (
     <div className="flex h-full flex-col bg-canvas overflow-auto">
-      <Suspense fallback={null}>
-        <ConnectionStatusBanner />
-      </Suspense>
       <SummaryCards totals={totals} dateLabel={range.label} isLoading={isLoading} currencyCode={portfolioCc} approx={portfolioApprox} />
 
       <div className="flex flex-1 items-start gap-4 p-4">

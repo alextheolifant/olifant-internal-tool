@@ -43,27 +43,21 @@ export class SpApiController {
         `callback missing required params: code=${!!code} sellingPartnerId=${!!sellingPartnerId} state=${!!state}`,
       );
       res.redirect(
-        `${webAppUrl}/dashboard?sp_connected=0&reason=missing_params`,
+        `${webAppUrl}/sp-api/connected?status=error&reason=missing_params`,
       );
       return;
     }
 
     try {
-      const clientId = await this.spApiService.handleCallback(
-        code,
-        sellingPartnerId,
-        state,
-      );
-      res.redirect(
-        `${webAppUrl}/dashboard?sp_connected=1&clientId=${clientId}`,
-      );
+      await this.spApiService.handleCallback(code, sellingPartnerId, state);
+      res.redirect(`${webAppUrl}/sp-api/connected?status=success`);
     } catch (err) {
       this.logger.error(
         `callback failed: ${err instanceof Error ? err.message : String(err)}`,
         err instanceof Error ? err.stack : undefined,
       );
       res.redirect(
-        `${webAppUrl}/dashboard?sp_connected=0&reason=connection_failed`,
+        `${webAppUrl}/sp-api/connected?status=error&reason=connection_failed`,
       );
     }
   }
