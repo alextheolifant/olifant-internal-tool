@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Logger,
   Param,
   ParseUUIDPipe,
   Query,
@@ -13,6 +14,8 @@ import { SpApiService } from './sp-api.service';
 
 @Controller('sp-api')
 export class SpApiController {
+  private readonly logger = new Logger(SpApiController.name);
+
   constructor(private readonly spApiService: SpApiService) {}
 
   @Get('connect/:clientId')
@@ -36,6 +39,9 @@ export class SpApiController {
     const webAppUrl = process.env.WEB_APP_URL ?? 'http://localhost:3000';
 
     if (!code || !sellingPartnerId || !state) {
+      this.logger.error(
+        `callback missing required params: code=${!!code} sellingPartnerId=${!!sellingPartnerId} state=${!!state}`,
+      );
       res.redirect(
         `${webAppUrl}/dashboard?sp_connected=0&reason=missing_params`,
       );
@@ -51,7 +57,11 @@ export class SpApiController {
       res.redirect(
         `${webAppUrl}/dashboard?sp_connected=1&clientId=${clientId}`,
       );
-    } catch {
+    } catch (err) {
+      this.logger.error(
+        `callback failed: ${err instanceof Error ? err.message : String(err)}`,
+        err instanceof Error ? err.stack : undefined,
+      );
       res.redirect(
         `${webAppUrl}/dashboard?sp_connected=0&reason=connection_failed`,
       );

@@ -149,30 +149,34 @@ export class SpApiService {
       );
     }
 
-    for (const marketplace of marketplaceIds) {
-      await this.drizzle.db
-        .insert(amazonSpAccounts)
-        .values({
-          clientId,
-          sellingPartnerId,
-          marketplace,
-          region,
-          refreshToken: encryptedToken,
-        })
-        .onConflictDoUpdate({
-          target: [
-            amazonSpAccounts.sellingPartnerId,
-            amazonSpAccounts.marketplace,
-          ],
-          set: {
+    // All-or-nothing: a partial failure partway through a multi-marketplace
+    // authorization must not leave some marketplaces saved and others missing.
+    await this.drizzle.db.transaction(async (tx) => {
+      for (const marketplace of marketplaceIds) {
+        await tx
+          .insert(amazonSpAccounts)
+          .values({
             clientId,
+            sellingPartnerId,
+            marketplace,
             region,
             refreshToken: encryptedToken,
-            isActive: true,
-            updatedAt: new Date(),
-          },
-        });
-    }
+          })
+          .onConflictDoUpdate({
+            target: [
+              amazonSpAccounts.sellingPartnerId,
+              amazonSpAccounts.marketplace,
+            ],
+            set: {
+              clientId,
+              region,
+              refreshToken: encryptedToken,
+              isActive: true,
+              updatedAt: new Date(),
+            },
+          });
+      }
+    });
 
     return clientId;
   }

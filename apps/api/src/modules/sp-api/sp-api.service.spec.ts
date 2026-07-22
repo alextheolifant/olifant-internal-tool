@@ -19,6 +19,12 @@ function buildDrizzleMock() {
   const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
   const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
   const insert = jest.fn().mockReturnValue({ values });
+  // handleCallback runs its inserts through db.transaction(tx => ...) — the
+  // mock tx reuses the same `insert` mock so existing call-assertions still work.
+  const transaction = jest.fn(
+    async (callback: (tx: { insert: typeof insert }) => Promise<void>) =>
+      callback({ insert }),
+  );
 
   return {
     db: {
@@ -27,6 +33,7 @@ function buildDrizzleMock() {
         amazonAdsAccounts: { findMany: adsAccountsFindMany },
       },
       insert,
+      transaction,
     },
     _mocks: {
       clientsFindFirst,
@@ -34,6 +41,7 @@ function buildDrizzleMock() {
       insert,
       values,
       onConflictDoUpdate,
+      transaction,
     },
   };
 }
