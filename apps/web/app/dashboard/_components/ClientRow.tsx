@@ -57,6 +57,12 @@ export function ClientRow({ client, isExpanded, onToggle, onEdit, viewMode, show
                 {client.accounts.length}
               </span>
             )}
+            {client.spConnected && (
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-400"
+                title="Amazon SP-API connected"
+              />
+            )}
             <button
               onClick={(e) => { e.stopPropagation(); onEdit(client); }}
               className="ml-auto hidden h-5 w-5 shrink-0 items-center justify-center rounded text-neutral-300 hover:bg-neutral-100 hover:text-neutral-600 group-hover:flex transition-colors"

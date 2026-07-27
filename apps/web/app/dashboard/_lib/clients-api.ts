@@ -29,6 +29,7 @@ export interface ApiClient {
   goalTacos: number | null;
   goalRevenue: number | null;
   marketplaceCount: number;
+  spConnected: boolean;
   spend: number;
   ppcRev: number;
   ppcOrd: number;
@@ -73,6 +74,7 @@ function mapApiClient(c: ApiClient): ClientRow {
     status: (c.status as ClientStatus) ?? "Active",
     goalTacos: c.goalTacos,
     goalRevenue: c.goalRevenue,
+    spConnected: c.spConnected,
     spend: c.spend,
     ppcRev: c.ppcRev,
     orgRev: c.orgRev,

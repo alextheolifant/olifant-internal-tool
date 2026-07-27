@@ -74,6 +74,7 @@ export interface ClientRow extends RawInputs {
   status:       ClientStatus;
   goalRevenue:  number | null;
   goalTacos:    number | null;
+  spConnected:  boolean;
   trend:        number[];
   accounts:     AccountRow[];
 }

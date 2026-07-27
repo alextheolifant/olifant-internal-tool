@@ -331,6 +331,7 @@ export class MetricsService {
         goalTacos: c.targetTacos ? parseFloat(c.targetTacos) : null,
         goalRevenue: c.goalRevenue ? parseFloat(c.goalRevenue) : null,
         marketplaceCount: c.accountRows.length,
+        spConnected: connected.has(c.id),
         spend: c.spend,
         ppcRev: c.ppcRev,
         ppcOrd: c.ppcOrd,
