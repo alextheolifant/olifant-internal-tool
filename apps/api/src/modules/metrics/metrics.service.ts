@@ -455,7 +455,11 @@ export class MetricsService {
   ): number | null {
     if (!connected.has(clientId)) return null;
 
-    const totalSales = totalSalesByClient.get(clientId) ?? 0;
+    // Connected but no sales rows have synced yet for this range — genuinely
+    // unknown, not the same as "synced and organic sales came in at zero".
+    const totalSales = totalSalesByClient.get(clientId);
+    if (totalSales === undefined) return null;
+
     const { orgRev, floored } = floorOrgRev(totalSales, ppcRev);
     if (floored) {
       this.logger.warn(
