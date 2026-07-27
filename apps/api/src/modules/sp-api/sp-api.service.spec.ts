@@ -314,6 +314,65 @@ describe('SpApiService', () => {
       expect(typedValues.mock.calls[0][0].marketplace).toBe('ATVPDKIKX0DER');
     });
 
+    it('drops non-retail marketplaces (Amazon Pay, sandbox, shadow, etc.) even when isParticipating is true', async () => {
+      redis.get.mockResolvedValue(
+        JSON.stringify({ clientId: 'client-1', region: 'na' }),
+      );
+      jest.spyOn(global, 'fetch').mockImplementation((input) => {
+        const url = input as string;
+        if (url.includes('auth/o2/token')) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({ refresh_token: 'rt', access_token: 'at' }),
+          } as Response);
+        }
+        return Promise.resolve({
+          ok: true,
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                payload: [
+                  {
+                    marketplace: {
+                      id: 'ATVPDKIKX0DER',
+                      countryCode: 'US',
+                      name: 'Amazon.com',
+                    },
+                    participation: { isParticipating: true },
+                  },
+                  {
+                    marketplace: {
+                      id: 'A3BXB0YN3XH17H',
+                      countryCode: 'US',
+                      name: 'Amazon Pay Sandbox',
+                    },
+                    participation: { isParticipating: true },
+                  },
+                  {
+                    marketplace: {
+                      id: 'AHRY1CZE9ZY4H',
+                      countryCode: 'US',
+                      name: 'Amazon.com Invoicing Shadow Marketplace',
+                    },
+                    participation: { isParticipating: true },
+                  },
+                ],
+              }),
+            ),
+        } as Response);
+      });
+
+      await service.handleCallback('auth-code', 'A1SELLER', 'good-state');
+
+      expect(drizzle._mocks.insert).toHaveBeenCalledTimes(1);
+      const typedValues = drizzle._mocks.values as jest.Mock<
+        unknown,
+        [InsertedSpAccount]
+      >;
+      expect(typedValues.mock.calls[0][0].marketplace).toBe('ATVPDKIKX0DER');
+    });
+
     it('throws BadRequestException when no marketplaces are participating', async () => {
       redis.get.mockResolvedValue(
         JSON.stringify({ clientId: 'client-1', region: 'na' }),

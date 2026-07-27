@@ -24,6 +24,44 @@ const SP_API_REGION_BASE_URLS: Record<string, string> = {
   fe: 'https://sellingpartnerapi-fe.amazon.com',
 };
 
+// Amazon's marketplaceParticipations endpoint returns more than real retail
+// storefronts — Amazon Pay, sandbox, "Non-Amazon" checkout, and internal
+// "shadow marketplace" entries all come back with isParticipating: true too.
+// Confirmed against a real seller's live response (2026-07-27): 7 of 9
+// returned marketplaces were non-retail noise like "Amazon Pay Sandbox" and
+// "Amazon.com Invoicing Shadow Marketplace". Only marketplace IDs in this
+// list — Amazon's documented real storefronts — are stored.
+const KNOWN_RETAIL_MARKETPLACE_IDS: Record<string, Set<string>> = {
+  na: new Set([
+    'ATVPDKIKX0DER', // US
+    'A2EUQ1WTGCTBG2', // Canada
+    'A1AM78C64UM0Y8', // Mexico
+    'A2Q3Y263D00KWC', // Brazil
+  ]),
+  eu: new Set([
+    'A1RKKUPIHCS9HS', // Spain
+    'A1F83G8C2ARO7P', // UK
+    'A13V1IB3VIYZZH', // France
+    'AMEN7PMS3EDWL', // Belgium
+    'A1805IZSGTT6HS', // Netherlands
+    'A1PA6795UKMFR9', // Germany
+    'APJ6JRA9NG5V4', // Italy
+    'A2NODRKZP88ZB9', // Sweden
+    'AE08WJ6YKNBMC', // South Africa
+    'A1C3SOZRARQ6R3', // Poland
+    'ARBP9OOSHTCHU', // Egypt
+    'A33AVAJ2PDY3EV', // Turkey
+    'A17E79C6D8DWNP', // Saudi Arabia
+    'A2VIGQ35RCS4UG', // UAE
+    'A21TJRUUN4KGV', // India
+  ]),
+  fe: new Set([
+    'A19VAU5U5O7RUS', // Singapore
+    'A39IBJ37TRP1C6', // Australia
+    'A1VC38T7YXB528', // Japan
+  ]),
+};
+
 interface OAuthState {
   clientId: string;
   region: string;
@@ -34,11 +72,10 @@ interface LwaTokenResponse {
   access_token: string;
 }
 
-// VERIFY against a real response during testing — documented shape, not yet
-// confirmed against a live call.
+// Shape confirmed against a real seller's live response (2026-07-27).
 interface MarketplaceParticipationsResponse {
   payload: {
-    marketplace: { id: string };
+    marketplace: { id: string; countryCode: string; name: string };
     participation: { isParticipating: boolean };
   }[];
 }
@@ -241,8 +278,20 @@ export class SpApiService {
 
     try {
       const body = JSON.parse(rawBody) as MarketplaceParticipationsResponse;
-      return body.payload
-        .filter((p) => p.participation.isParticipating)
+      const knownIds = KNOWN_RETAIL_MARKETPLACE_IDS[region] ?? new Set<string>();
+      const participating = body.payload.filter((p) => p.participation.isParticipating);
+
+      const nonRetail = participating.filter((p) => !knownIds.has(p.marketplace.id));
+      if (nonRetail.length > 0) {
+        this.logger.warn(
+          `dropped ${nonRetail.length} non-retail marketplace(s) from participations: ${nonRetail
+            .map((p) => `${p.marketplace.id} (${p.marketplace.name})`)
+            .join(', ')}`,
+        );
+      }
+
+      return participating
+        .filter((p) => knownIds.has(p.marketplace.id))
         .map((p) => p.marketplace.id);
     } catch (err) {
       this.logger.error(
