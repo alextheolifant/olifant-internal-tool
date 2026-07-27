@@ -22,6 +22,20 @@ export interface ConnectAmazonResponse {
 // picker instead of just a dead-end error message.
 export class RegionAmbiguousError extends Error {}
 
+export interface ConnectedRegion {
+  region: string;
+  marketplaces: string[];
+  connectedAt: string;
+}
+
+export async function getAmazonConnectionStatus(
+  clientId: string,
+): Promise<ConnectedRegion[]> {
+  const res = await apiFetch(`/api/sp-api/status/${clientId}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 export async function connectClientAmazonAccount(
   clientId: string,
   opts?: { region?: string },

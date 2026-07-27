@@ -27,6 +27,12 @@ export class SpApiController {
     return this.spApiService.buildAuthorizationUrl(clientId, region);
   }
 
+  @Get('status/:clientId')
+  @UseGuards(JwtAuthGuard)
+  async status(@Param('clientId', ParseUUIDPipe) clientId: string) {
+    return this.spApiService.getConnectionStatus(clientId);
+  }
+
   // Amazon redirects the seller's browser here directly after consent — no
   // JWT to check; the CSRF `state` param is what proves this is legitimate.
   @Get('callback')

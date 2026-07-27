@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   connectClientAmazonAccount,
+  getAmazonConnectionStatus,
   RegionAmbiguousError,
   SP_API_REGIONS,
   SP_API_REGION_LABELS,
   type ConnectAmazonResponse,
+  type ConnectedRegion,
 } from "../_lib/sp-api";
 
 interface ConnectAmazonSectionProps {
@@ -19,6 +21,21 @@ export function ConnectAmazonSection({ clientId }: ConnectAmazonSectionProps) {
   const [error, setError] = useState<string | null>(null);
   const [copiedRegion, setCopiedRegion] = useState<string | null>(null);
   const [showRegionPicker, setShowRegionPicker] = useState(false);
+  const [status, setStatus] = useState<ConnectedRegion[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAmazonConnectionStatus(clientId)
+      .then((result) => {
+        if (!cancelled) setStatus(result);
+      })
+      .catch(() => {
+        if (!cancelled) setStatus([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId]);
 
   const remainingRegions = SP_API_REGIONS.filter(
     (r) => !links.some((l) => l.region === r.value),
@@ -54,6 +71,30 @@ export function ConnectAmazonSection({ clientId }: ConnectAmazonSectionProps) {
       <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
         Amazon SP-API
       </label>
+
+      {status && status.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-semibold text-green-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+            Connected
+          </span>
+          {status.map((s) => (
+            <span
+              key={s.region}
+              className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-500"
+            >
+              {SP_API_REGION_LABELS[s.region] ?? s.region} · {s.marketplaces.length}{" "}
+              marketplace{s.marketplaces.length === 1 ? "" : "s"}
+            </span>
+          ))}
+        </div>
+      )}
+      {status && status.length === 0 && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-500">
+          <span className="h-1.5 w-1.5 rounded-full bg-neutral-400" />
+          Not connected
+        </span>
+      )}
 
       {links.length > 0 && (
         <div className="space-y-2">

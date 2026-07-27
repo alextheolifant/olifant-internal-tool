@@ -16,6 +16,7 @@ interface InsertedSpAccount {
 function buildDrizzleMock() {
   const clientsFindFirst = jest.fn();
   const adsAccountsFindMany = jest.fn().mockResolvedValue([]);
+  const spAccountsFindMany = jest.fn().mockResolvedValue([]);
   const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
   const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
   const insert = jest.fn().mockReturnValue({ values });
@@ -31,6 +32,7 @@ function buildDrizzleMock() {
       query: {
         clients: { findFirst: clientsFindFirst },
         amazonAdsAccounts: { findMany: adsAccountsFindMany },
+        amazonSpAccounts: { findMany: spAccountsFindMany },
       },
       insert,
       transaction,
@@ -38,6 +40,7 @@ function buildDrizzleMock() {
     _mocks: {
       clientsFindFirst,
       adsAccountsFindMany,
+      spAccountsFindMany,
       insert,
       values,
       onConflictDoUpdate,
@@ -404,6 +407,37 @@ describe('SpApiService', () => {
       await expect(
         service.handleCallback('auth-code', 'A1SELLER', 'good-state'),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('getConnectionStatus', () => {
+    it('returns an empty array when the client has no connected accounts', async () => {
+      drizzle._mocks.spAccountsFindMany.mockResolvedValue([]);
+
+      const result = await service.getConnectionStatus('client-1');
+
+      expect(result).toEqual([]);
+    });
+
+    it('groups multiple marketplace rows in the same region into one entry', async () => {
+      const early = new Date('2026-07-27T10:00:00Z');
+      const late = new Date('2026-07-27T10:00:05Z');
+      drizzle._mocks.spAccountsFindMany.mockResolvedValue([
+        { region: 'na', marketplace: 'ATVPDKIKX0DER', createdAt: early },
+        { region: 'na', marketplace: 'A1AM78C64UM0Y8', createdAt: late },
+        { region: 'eu', marketplace: 'A1F83G8C2ARO7P', createdAt: late },
+      ]);
+
+      const result = await service.getConnectionStatus('client-1');
+
+      expect(result).toEqual([
+        {
+          region: 'na',
+          marketplaces: ['ATVPDKIKX0DER', 'A1AM78C64UM0Y8'],
+          connectedAt: early,
+        },
+        { region: 'eu', marketplaces: ['A1F83G8C2ARO7P'], connectedAt: late },
+      ]);
     });
   });
 });

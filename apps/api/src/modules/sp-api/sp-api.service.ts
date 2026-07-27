@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { DrizzleService } from '../../db/drizzle.service';
 import { RedisService } from '../../db/redis.service';
 import { clients, amazonAdsAccounts, amazonSpAccounts } from '../../db/schema';
@@ -146,6 +146,49 @@ export class SpApiService {
         ? 'Client has no existing Ads account to infer a region from — pass ?region= explicitly.'
         : 'Client operates in multiple regions — pass ?region= explicitly to disambiguate.',
     );
+  }
+
+  /**
+   * Groups a client's active amazon_sp_accounts rows by region — one row
+   * exists per marketplace, so this collapses them back into "connected
+   * regions" for display rather than making the UI reason about raw rows.
+   */
+  async getConnectionStatus(clientId: string): Promise<
+    { region: string; marketplaces: string[]; connectedAt: Date }[]
+  > {
+    const rows = await this.drizzle.db.query.amazonSpAccounts.findMany({
+      where: and(
+        eq(amazonSpAccounts.clientId, clientId),
+        eq(amazonSpAccounts.isActive, true),
+      ),
+    });
+
+    const byRegion = new Map<
+      string,
+      { marketplaces: string[]; connectedAt: Date }
+    >();
+    for (const row of rows) {
+      const region = row.region ?? 'unknown';
+      const marketplace = row.marketplace ?? 'unknown';
+      const existing = byRegion.get(region);
+      if (existing) {
+        existing.marketplaces.push(marketplace);
+        if (row.createdAt < existing.connectedAt) {
+          existing.connectedAt = row.createdAt;
+        }
+      } else {
+        byRegion.set(region, {
+          marketplaces: [marketplace],
+          connectedAt: row.createdAt,
+        });
+      }
+    }
+
+    return [...byRegion.entries()].map(([region, v]) => ({
+      region,
+      marketplaces: v.marketplaces,
+      connectedAt: v.connectedAt,
+    }));
   }
 
   /**
