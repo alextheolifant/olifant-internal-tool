@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { eq } from 'drizzle-orm';
 import * as bcrypt from 'bcrypt';
@@ -67,6 +71,32 @@ export class AuthService {
     if (!user) throw new UnauthorizedException();
 
     return { accessToken: this.signAccess(user.id, user.email, user.role) };
+  }
+
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const [user] = await this.drizzle.db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!user) throw new UnauthorizedException();
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    // BadRequestException (400), not Unauthorized (401) — apiFetch on the
+    // frontend treats any 401 as "your session token expired" and
+    // automatically refreshes + retries, which would be wrong here: a wrong
+    // current password is a bad request, not an invalid session.
+    if (!valid) throw new BadRequestException('Current password is incorrect');
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.drizzle.db
+      .update(users)
+      .set({ passwordHash })
+      .where(eq(users.id, userId));
   }
 
   private issueTokens(id: string, email: string, role: string): TokenPair {

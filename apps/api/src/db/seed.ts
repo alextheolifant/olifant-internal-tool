@@ -16,30 +16,51 @@ async function seed() {
   // (e.g. against a freshly reset DB where migrations ran in a different order).
   let [org] = await db.select().from(organizations).limit(1);
   if (!org) {
-    [org] = await db.insert(organizations).values({ name: 'Olifant' }).returning();
+    [org] = await db
+      .insert(organizations)
+      .values({ name: 'Olifant' })
+      .returning();
     console.log(`Seed organization created: ${org.name} (${org.id})`);
   } else {
     console.log(`Seed organization already exists: ${org.name} (${org.id})`);
   }
 
-  const plainPassword = 'OlifantDev2026!';
-  const passwordHash = await bcrypt.hash(plainPassword, 12);
-
-  const seedUsers: { email: string; role: 'admin' | 'analyst' }[] = [
-    { email: 'admin@olifantdigital.com', role: 'admin' },
+  const seedUsers: {
+    email: string;
+    role: 'admin' | 'analyst';
+    password: string;
+  }[] = [
+    {
+      email: 'admin@olifantdigital.com',
+      role: 'admin',
+      password: 'OlifantDev2026!',
+    },
     // Second Olifant team member — used to verify manager-account connections
     // are shared org-wide, not scoped to whoever personally connected them.
-    { email: 'mike@olifantdigital.com', role: 'analyst' },
+    // Own password, not shared with admin, so the two seed logins are
+    // actually distinguishable in testing.
+    {
+      email: 'mike@olifantdigital.com',
+      role: 'analyst',
+      password: 'MikeDev2026!',
+    },
   ];
 
-  for (const { email, role } of seedUsers) {
+  for (const { email, role, password } of seedUsers) {
+    const passwordHash = await bcrypt.hash(password, 12);
+    // onConflictDoUpdate, not onConflictDoNothing — re-running the seed must
+    // actually enforce each account's intended password/role, not silently
+    // skip existing rows (which previously left a stale shared password in
+    // place even after this file was changed to assign a distinct one).
     await db
       .insert(users)
       .values({ email, passwordHash, role, organizationId: org.id })
-      .onConflictDoNothing();
-    console.log(`Seed user ready: ${email} (${role})`);
+      .onConflictDoUpdate({
+        target: users.email,
+        set: { passwordHash, role },
+      });
+    console.log(`Seed user ready: ${email} (${role}) — password: ${password}`);
   }
-  console.log(`Password (all seed users): ${plainPassword}`);
 
   await client.end();
 }
