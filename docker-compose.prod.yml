@@ -17,7 +17,12 @@ services:
       SP_TOKEN_ENCRYPTION_KEY: ${SP_TOKEN_ENCRYPTION_KEY}
       ADS_CLIENT_ID: ${ADS_CLIENT_ID}
       ADS_CLIENT_SECRET: ${ADS_CLIENT_SECRET}
-      ADS_REDIRECT_URI: "https://app.olifantdigital.com/ads-api/callback"
+      # Must include the /api/ prefix — that's what next.config.ts's rewrite
+      # (source: "/api/:path*") matches to forward the request internally to
+      # this container. Without it, Amazon's redirect lands on the web app's
+      # own routing instead and 404s (same reason /sp-api/callback is
+      # registered as .../api/sp-api/callback, not .../sp-api/callback).
+      ADS_REDIRECT_URI: "https://app.olifantdigital.com/api/ads-api/callback"
       WEB_APP_URL: "https://app.olifantdigital.com"
     ports: ["3001:3001"]
 
