@@ -127,6 +127,13 @@
       "when": 1784625385728,
       "tag": "0017_sp_account_multi_marketplace",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785199762361,
+      "tag": "0018_ads_manager_accounts",
+      "breakpoints": true
     }
   ]
 }

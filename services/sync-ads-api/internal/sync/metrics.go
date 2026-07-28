@@ -17,8 +17,8 @@ import (
 const (
 	syncTypeAdsMetrics = "ads_metrics"
 
-	phase1Concurrency = 5               // max concurrent report requests in Phase 1
-	phase2Concurrency = 10              // max concurrent poll checks per round
+	phase1Concurrency = 5  // max concurrent report requests in Phase 1
+	phase2Concurrency = 10 // max concurrent poll checks per round
 	pollInterval      = 5 * time.Minute
 	maxWait           = 16 * time.Minute // real reports take ~10 min; give 16 min headroom
 )
@@ -35,11 +35,11 @@ var regionBaseURL = func() map[string]string {
 
 // MetricsResult summarises one syncMetrics run.
 type MetricsResult struct {
-	AccountsOK     int
-	AccountsFailed int
+	AccountsOK      int
+	AccountsFailed  int
 	AccountsSkipped int // NULL/invalid region
-	RecordsWritten int
-	ByRegion       map[string]regionMetricsResult
+	RecordsWritten  int
+	ByRegion        map[string]regionMetricsResult
 }
 
 type regionMetricsResult struct {
@@ -50,18 +50,33 @@ type regionMetricsResult struct {
 
 // MetricsOrchestrator drives the two-phase metrics sync.
 type MetricsOrchestrator struct {
-	tokens       *amazon.TokenManager
-	amazonClient *amazon.Client
-	writer       *db.Writer
-	chWriter     *db.CHWriter
+	clientID      string
+	clientSecret  string
+	encryptionKey []byte
+	writer        *db.Writer
+	chWriter      *db.CHWriter
+
+	// apiClient is used only for data calls (RequestReport, GetReportStatus,
+	// DownloadReport) that take an already-obtained access token as a
+	// parameter — it never exchanges its own token, so it isn't tied to any
+	// one manager account's refresh token.
+	apiClient *amazon.Client
+
+	// tokenManagers is keyed by ads_manager_account_id, built once per entry
+	// point (SyncMetrics and RetryFailedReports are separate process
+	// invocations in practice — cmd/sync-metrics vs cmd/retry-reports — so
+	// each builds its own rather than assuming the other already ran).
+	tokenManagers map[string]*amazon.TokenManager
 }
 
-func NewMetricsOrchestrator(c *amazon.Client, w *db.Writer, ch *db.CHWriter) *MetricsOrchestrator {
+func NewMetricsOrchestrator(clientID, clientSecret string, encryptionKey []byte, w *db.Writer, ch *db.CHWriter) *MetricsOrchestrator {
 	return &MetricsOrchestrator{
-		tokens:       amazon.NewTokenManager(c),
-		amazonClient: c,
-		writer:       w,
-		chWriter:     ch,
+		clientID:      clientID,
+		clientSecret:  clientSecret,
+		encryptionKey: encryptionKey,
+		writer:        w,
+		chWriter:      ch,
+		apiClient:     amazon.NewClient(clientID, clientSecret, ""),
 	}
 }
 
@@ -69,10 +84,11 @@ func NewMetricsOrchestrator(c *amazon.Client, w *db.Writer, ch *db.CHWriter) *Me
 // startDate/endDate are "YYYY-MM-DD". Region handling is internal.
 //
 // Call patterns — same function, different ranges chosen by the caller:
-//   Initial 30-day backfill (today, manual):   SyncMetrics(accounts, today-30, today)
-//   Today refresh (future, every 2-4 h):       SyncMetrics(accounts, today, today)
-//   Daily catch-up for attribution drift:       SyncMetrics(accounts, today-7, today)
-//   Ad-hoc re-sync of any specific range:       SyncMetrics(accounts, anyStart, anyEnd)
+//
+//	Initial 30-day backfill (today, manual):   SyncMetrics(accounts, today-30, today)
+//	Today refresh (future, every 2-4 h):       SyncMetrics(accounts, today, today)
+//	Daily catch-up for attribution drift:       SyncMetrics(accounts, today-7, today)
+//	Ad-hoc re-sync of any specific range:       SyncMetrics(accounts, anyStart, anyEnd)
 //
 // TODO: Temporal will call this on schedules — e.g. every 2-4 h with a 1-day
 // range for freshness, and once daily with a 7-day range for attribution corrections.
@@ -82,6 +98,7 @@ func (o *MetricsOrchestrator) SyncMetrics(
 	startDate, endDate string,
 ) (*MetricsResult, error) {
 	result := &MetricsResult{ByRegion: make(map[string]regionMetricsResult)}
+	o.tokenManagers = buildTokenManagers(ctx, o.writer, o.clientID, o.clientSecret, o.encryptionKey, "[metrics]")
 
 	// ── Phase 1: submit report requests for every account concurrently ────────
 	type phase1Out struct {
@@ -129,7 +146,14 @@ func (o *MetricsOrchestrator) SyncMetrics(
 			}
 
 			// Get (or refresh) access token — same token works across all regions
-			token, err := o.tokens.Token(ctx)
+			// for this account's manager account.
+			tokenManager, ok := o.tokenManagers[a.AdsManagerAccountID]
+			if !ok {
+				out.err = fmt.Errorf("no token manager for manager account %q (unset, or its token failed to init)", a.AdsManagerAccountID)
+				outCh <- out
+				return
+			}
+			token, err := tokenManager.Token(ctx)
 			if err != nil {
 				out.err = fmt.Errorf("get token: %w", err)
 				outCh <- out
@@ -150,7 +174,7 @@ func (o *MetricsOrchestrator) SyncMetrics(
 			}
 
 			// Submit the report request to Amazon
-			reportID, err := o.amazonClient.RequestReport(ctx, token, baseURL, a.ProfileID, startDate, endDate)
+			reportID, err := o.apiClient.RequestReport(ctx, token, baseURL, a.ProfileID, startDate, endDate)
 			if err != nil {
 				_ = o.writer.CompleteSyncFailure(ctx, logID, 0, err.Error())
 				out.err = fmt.Errorf("request report: %w", err)
@@ -249,14 +273,20 @@ func (o *MetricsOrchestrator) pollPendingReports(ctx context.Context, deadline t
 					return
 				}
 
-				token, err := o.tokens.Token(ctx)
+				tokenManager, ok := o.tokenManagers[r.AdsManagerAccountID]
+				if !ok {
+					pr.err = fmt.Errorf("no token manager for manager account %q (unset, or its token failed to init)", r.AdsManagerAccountID)
+					pollCh <- pr
+					return
+				}
+				token, err := tokenManager.Token(ctx)
 				if err != nil {
 					pr.err = fmt.Errorf("get token: %w", err)
 					pollCh <- pr
 					return
 				}
 
-				status, err := o.amazonClient.GetReportStatus(ctx, token, baseURL, r.ProfileID, r.ReportID)
+				status, err := o.apiClient.GetReportStatus(ctx, token, baseURL, r.ProfileID, r.ReportID)
 				if err != nil {
 					pr.err = fmt.Errorf("poll status: %w", err)
 					pollCh <- pr
@@ -340,7 +370,7 @@ func (o *MetricsOrchestrator) processCompleted(
 	row db.PendingReportRequest,
 	downloadURL string,
 ) (int, error) {
-	records, err := o.amazonClient.DownloadReport(ctx, downloadURL)
+	records, err := o.apiClient.DownloadReport(ctx, downloadURL)
 	if err != nil {
 		return 0, fmt.Errorf("download report: %w", err)
 	}
@@ -374,14 +404,14 @@ func (o *MetricsOrchestrator) processCompleted(
 			continue
 		}
 
-		date, _        := jsonString(rec, "date")
+		date, _ := jsonString(rec, "date")
 		impressions, _ := jsonInt64(rec, "impressions")
-		clicks, _      := jsonInt64(rec, "clicks")
-		cost, _        := jsonFloat64(rec, "cost")
-		sales, _       := jsonFloat64(rec, salesCol)
-		purchases, _   := jsonInt64(rec, purchasesCol)
-		cpc, _         := jsonFloat64(rec, "costPerClick")
-		ctr, _         := jsonFloat64(rec, "clickThroughRate")
+		clicks, _ := jsonInt64(rec, "clicks")
+		cost, _ := jsonFloat64(rec, "cost")
+		sales, _ := jsonFloat64(rec, salesCol)
+		purchases, _ := jsonInt64(rec, purchasesCol)
+		cpc, _ := jsonFloat64(rec, "costPerClick")
+		ctr, _ := jsonFloat64(rec, "clickThroughRate")
 
 		// ACoS and ROAS are always calculated locally (not requested from API)
 		acos := 0.0

@@ -19,13 +19,20 @@ export function setTokens(accessToken: string, refreshToken?: string) {
   if (refreshToken) localStorage.setItem('refresh_token', refreshToken);
   const maxAge = 30 * 24 * 60 * 60;
   const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-  document.cookie = `olifant_session=1; path=/; max-age=${maxAge}; SameSite=Strict${secure}`;
+  // Lax, not Strict — this cookie only ever holds "1" (a page-routing flag
+  // read by proxy.ts, not a credential; real auth is the JWT bearer token
+  // above). Strict withholds the cookie on the entire navigation chain when
+  // an external site (Amazon's OAuth consent page) redirects back to us,
+  // even after our own server-side redirect hop in between — which bounced
+  // a genuinely logged-in user to /login after completing the Ads API
+  // connect flow. Lax still blocks cross-site state-changing requests.
+  document.cookie = `olifant_session=1; path=/; max-age=${maxAge}; SameSite=Lax${secure}`;
 }
 
 export function clearSession() {
   localStorage.removeItem('access_token');
   localStorage.removeItem('refresh_token');
-  document.cookie = 'olifant_session=; path=/; max-age=0; SameSite=Strict';
+  document.cookie = 'olifant_session=; path=/; max-age=0; SameSite=Lax';
 }
 
 export function parseAccessToken(token: string): JwtUser | null {

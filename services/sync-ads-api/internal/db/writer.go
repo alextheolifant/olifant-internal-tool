@@ -75,18 +75,22 @@ type AdsAccountUpsert struct {
 	AccountType         string
 	MarketplaceStringID string
 	Region              string
+	AdsManagerAccountID string
 }
 
 // UpsertAdsAccount inserts or updates an amazon_ads_accounts row keyed on
 // profile_id. is_active is intentionally absent from the UPDATE SET clause:
 // it is only ever set by the column's DEFAULT true on INSERT, so a manually
 // deactivated account is never silently reactivated by a re-sync.
+// ads_manager_account_id, unlike is_active, IS updated on re-sync — which
+// manager account currently owns a profile can legitimately change.
 func (w *Writer) UpsertAdsAccount(ctx context.Context, tx pgx.Tx, row AdsAccountUpsert) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO amazon_ads_accounts (
 			client_id, profile_id, account_name, marketplace, country_code,
-			currency_code, timezone, account_type, marketplace_string_id, region
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			currency_code, timezone, account_type, marketplace_string_id, region,
+			ads_manager_account_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (profile_id) DO UPDATE SET
 			client_id = EXCLUDED.client_id,
 			account_name = EXCLUDED.account_name,
@@ -97,10 +101,12 @@ func (w *Writer) UpsertAdsAccount(ctx context.Context, tx pgx.Tx, row AdsAccount
 			account_type = EXCLUDED.account_type,
 			marketplace_string_id = EXCLUDED.marketplace_string_id,
 			region = EXCLUDED.region,
+			ads_manager_account_id = EXCLUDED.ads_manager_account_id,
 			updated_at = now()
 	`,
 		row.ClientID, row.ProfileID, row.AccountName, row.Marketplace, row.CountryCode,
 		row.CurrencyCode, row.Timezone, row.AccountType, row.MarketplaceStringID, row.Region,
+		row.AdsManagerAccountID,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert ads account: %w", err)
@@ -175,15 +181,17 @@ func (w *Writer) CreateAccountSyncLog(ctx context.Context, syncType, accountID s
 
 // AdsAccount is a minimal view of amazon_ads_accounts used by sync orchestrators.
 type AdsAccount struct {
-	ID        string // PostgreSQL UUID (for FK joins to campaigns table)
-	ProfileID string // Amazon profile_id (for API scope header + ClickHouse writes)
-	Region    string // 'na' | 'eu' | 'fe'
+	ID                  string // PostgreSQL UUID (for FK joins to campaigns table)
+	ProfileID           string // Amazon profile_id (for API scope header + ClickHouse writes)
+	Region              string // 'na' | 'eu' | 'fe'
+	AdsManagerAccountID string // '' if unset (e.g. never touched by profile sync post-migration)
 }
 
 // FetchActiveAccounts returns all accounts where is_active = true.
 func (w *Writer) FetchActiveAccounts(ctx context.Context) ([]AdsAccount, error) {
 	rows, err := w.pool.Query(ctx,
-		`SELECT id, profile_id, region FROM amazon_ads_accounts WHERE is_active = true ORDER BY id`,
+		`SELECT id, profile_id, region, COALESCE(ads_manager_account_id::text, '')
+		 FROM amazon_ads_accounts WHERE is_active = true ORDER BY id`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fetch active accounts: %w", err)
@@ -193,8 +201,43 @@ func (w *Writer) FetchActiveAccounts(ctx context.Context) ([]AdsAccount, error) 
 	var accounts []AdsAccount
 	for rows.Next() {
 		var a AdsAccount
-		if err := rows.Scan(&a.ID, &a.ProfileID, &a.Region); err != nil {
+		if err := rows.Scan(&a.ID, &a.ProfileID, &a.Region, &a.AdsManagerAccountID); err != nil {
 			return nil, fmt.Errorf("scan account: %w", err)
+		}
+		accounts = append(accounts, a)
+	}
+	return accounts, rows.Err()
+}
+
+// ── Manager accounts ──────────────────────────────────────────────────────────
+
+// ManagerAccount is a minimal view of ads_manager_accounts used to build one
+// amazon.Client/TokenManager per connected manager account.
+type ManagerAccount struct {
+	ID                    string
+	EncryptedRefreshToken string
+	ConnectedAt           time.Time
+}
+
+// FetchActiveManagerAccounts returns all manager accounts where is_active =
+// true, ordered by connected_at. Unscoped by organization — there is only
+// one organization row today and this sync layer has no other org-awareness
+// to plug an organization_id filter into; revisit if a second org appears.
+func (w *Writer) FetchActiveManagerAccounts(ctx context.Context) ([]ManagerAccount, error) {
+	rows, err := w.pool.Query(ctx,
+		`SELECT id, refresh_token, connected_at FROM ads_manager_accounts
+		 WHERE is_active = true ORDER BY connected_at`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("fetch active manager accounts: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []ManagerAccount
+	for rows.Next() {
+		var a ManagerAccount
+		if err := rows.Scan(&a.ID, &a.EncryptedRefreshToken, &a.ConnectedAt); err != nil {
+			return nil, fmt.Errorf("scan manager account: %w", err)
 		}
 		accounts = append(accounts, a)
 	}
@@ -338,22 +381,26 @@ func (w *Writer) FindActiveReportRequest(ctx context.Context, accountID, startDa
 
 // PendingReportRequest is a row returned by GetPendingReportRequests.
 type PendingReportRequest struct {
-	ID                 string
-	AmazonAdsAccountID string
-	ProfileID          string
-	Region             string
-	ReportID           string
-	SyncLogID          string
-	StartDate          string
-	EndDate            string
+	ID                  string
+	AmazonAdsAccountID  string
+	ProfileID           string
+	Region              string
+	ReportID            string
+	SyncLogID           string
+	StartDate           string
+	EndDate             string
+	AdsManagerAccountID string
 }
 
 // GetPendingReportRequests reads all non-terminal rows from ads_report_requests.
-// Joining amazon_ads_accounts avoids needing to store profile_id in the request table.
+// Joining amazon_ads_accounts avoids needing to store profile_id (and now
+// ads_manager_account_id, for Phase 2's per-account token resolution) in the
+// request table itself.
 func (w *Writer) GetPendingReportRequests(ctx context.Context) ([]PendingReportRequest, error) {
 	rows, err := w.pool.Query(ctx, `
 		SELECT r.id, r.amazon_ads_account_id, a.profile_id, r.region,
-		       r.report_id, COALESCE(r.sync_log_id::text, ''), r.start_date::text, r.end_date::text
+		       r.report_id, COALESCE(r.sync_log_id::text, ''), r.start_date::text, r.end_date::text,
+		       COALESCE(a.ads_manager_account_id::text, '')
 		FROM ads_report_requests r
 		JOIN amazon_ads_accounts a ON a.id = r.amazon_ads_account_id
 		WHERE r.status IN ('PENDING', 'PROCESSING')
@@ -368,7 +415,7 @@ func (w *Writer) GetPendingReportRequests(ctx context.Context) ([]PendingReportR
 	for rows.Next() {
 		var p PendingReportRequest
 		if err := rows.Scan(&p.ID, &p.AmazonAdsAccountID, &p.ProfileID, &p.Region,
-			&p.ReportID, &p.SyncLogID, &p.StartDate, &p.EndDate); err != nil {
+			&p.ReportID, &p.SyncLogID, &p.StartDate, &p.EndDate, &p.AdsManagerAccountID); err != nil {
 			return nil, fmt.Errorf("scan pending row: %w", err)
 		}
 		result = append(result, p)
@@ -429,13 +476,14 @@ func (w *Writer) MarkTimedOutReportRequests(ctx context.Context, before time.Tim
 
 // RetryableReportRequest is a terminal ads_report_requests row eligible for retry.
 type RetryableReportRequest struct {
-	ID                 string
-	AmazonAdsAccountID string
-	ProfileID          string
-	Region             string
-	StartDate          string
-	EndDate            string
-	RetryCount         int
+	ID                  string
+	AmazonAdsAccountID  string
+	ProfileID           string
+	Region              string
+	StartDate           string
+	EndDate             string
+	RetryCount          int
+	AdsManagerAccountID string
 }
 
 // FetchRetryableReportRequests returns all rows with a terminal-failure status
@@ -443,7 +491,8 @@ type RetryableReportRequest struct {
 func (w *Writer) FetchRetryableReportRequests(ctx context.Context) ([]RetryableReportRequest, error) {
 	rows, err := w.pool.Query(ctx, `
 		SELECT r.id, r.amazon_ads_account_id, a.profile_id, r.region,
-		       r.start_date::text, r.end_date::text, r.retry_count
+		       r.start_date::text, r.end_date::text, r.retry_count,
+		       COALESCE(a.ads_manager_account_id::text, '')
 		FROM ads_report_requests r
 		JOIN amazon_ads_accounts a ON a.id = r.amazon_ads_account_id
 		WHERE r.status IN ('TIMED_OUT', 'FAILED', 'CANCELLED')
@@ -458,7 +507,7 @@ func (w *Writer) FetchRetryableReportRequests(ctx context.Context) ([]RetryableR
 	for rows.Next() {
 		var r RetryableReportRequest
 		if err := rows.Scan(&r.ID, &r.AmazonAdsAccountID, &r.ProfileID, &r.Region,
-			&r.StartDate, &r.EndDate, &r.RetryCount); err != nil {
+			&r.StartDate, &r.EndDate, &r.RetryCount, &r.AdsManagerAccountID); err != nil {
 			return nil, fmt.Errorf("scan retryable row: %w", err)
 		}
 		result = append(result, r)

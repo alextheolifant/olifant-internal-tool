@@ -66,11 +66,29 @@ export const anomalySeverityEnum = pgEnum('anomaly_severity', [
 
 // ─── Tables ──────────────────────────────────────────────────────────────────
 
+export const organizations = pgTable('organizations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 255 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   role: userRoleEnum('role').notNull().default('analyst'),
+  // Credential ownership (e.g. ads_manager_accounts) belongs to the
+  // organization, not the individual user — every user in an org can see and
+  // use every credential the org has connected. Migration 0018 backfills
+  // every existing row before adding the NOT NULL constraint this reflects.
+  organizationId: uuid('organization_id')
+    .notNull()
+    .references(() => organizations.id),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -113,6 +131,9 @@ export const amazonAdsAccounts = pgTable(
     accountType: varchar('account_type', { length: 20 }),
     marketplaceStringId: varchar('marketplace_string_id', { length: 50 }),
     region: varchar('region', { length: 3 }),
+    adsManagerAccountId: uuid('ads_manager_account_id').references(
+      () => adsManagerAccounts.id,
+    ),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -246,9 +267,57 @@ export const amazonSpAccounts = pgTable(
   ],
 );
 
+// A Manager Account credential belongs to the organization, not the
+// individual who connected it — every user in the org can see and use every
+// active row here. connected_by_user_id is audit/reference only, never used
+// for access control. Deliberately no unique constraint: multiple manager
+// accounts are expected to be simultaneously active for one org.
+//
+// TODO: if the same person (or someone else) re-authorizes the same
+// underlying Amazon Manager Account a second time, this produces a second,
+// functionally-duplicate row — not detected or deduped today. See
+// profiles.go's connected-at tiebreak in the Go sync service for the runtime
+// symptom this causes (the same profileId appearing under two manager
+// accounts) and how it's handled defensively, without solving the root cause.
+export const adsManagerAccounts = pgTable(
+  'ads_manager_accounts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    connectedByUserId: uuid('connected_by_user_id').references(
+      () => users.id,
+      { onDelete: 'set null' },
+    ),
+    refreshToken: varchar('refresh_token', { length: 2048 }).notNull(),
+    connectedAt: timestamp('connected_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index('idx_ads_manager_account_org').on(t.organizationId)],
+);
+
 // ─── Relations ───────────────────────────────────────────────────────────────
 
-export const usersRelations = relations(users, () => ({}));
+export const organizationsRelations = relations(organizations, ({ many }) => ({
+  users: many(users),
+  adsManagerAccounts: many(adsManagerAccounts),
+}));
+
+export const usersRelations = relations(users, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [users.organizationId],
+    references: [organizations.id],
+  }),
+}));
 
 export const clientsRelations = relations(clients, ({ many }) => ({
   amazonAdsAccounts: many(amazonAdsAccounts),
@@ -263,8 +332,27 @@ export const amazonAdsAccountsRelations = relations(
       fields: [amazonAdsAccounts.clientId],
       references: [clients.id],
     }),
+    adsManagerAccount: one(adsManagerAccounts, {
+      fields: [amazonAdsAccounts.adsManagerAccountId],
+      references: [adsManagerAccounts.id],
+    }),
     campaigns: many(campaigns),
     syncLogs: many(syncLogs),
+  }),
+);
+
+export const adsManagerAccountsRelations = relations(
+  adsManagerAccounts,
+  ({ one, many }) => ({
+    organization: one(organizations, {
+      fields: [adsManagerAccounts.organizationId],
+      references: [organizations.id],
+    }),
+    connectedByUser: one(users, {
+      fields: [adsManagerAccounts.connectedByUserId],
+      references: [users.id],
+    }),
+    amazonAdsAccounts: many(amazonAdsAccounts),
   }),
 );
 

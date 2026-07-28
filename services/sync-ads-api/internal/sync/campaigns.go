@@ -19,21 +19,37 @@ type CampaignResult struct {
 // CampaignOrchestrator pulls SP campaigns for every active account and
 // stores them in the campaigns table.
 type CampaignOrchestrator struct {
-	tokenManager *amazon.TokenManager
-	amazonClient *amazon.Client
-	writer       *db.Writer
+	clientID      string
+	clientSecret  string
+	encryptionKey []byte
+	writer        *db.Writer
+
+	// apiClient is used only for data calls (ListSPCampaigns) that take an
+	// already-obtained access token as a parameter — it never exchanges its
+	// own token, so it isn't tied to any one manager account's refresh token.
+	apiClient *amazon.Client
+
+	// tokenManagers is keyed by ads_manager_account_id, built once per run
+	// in RunCampaignSync — a fresh amazon.Client/TokenManager per active
+	// manager account, since each has its own refresh token.
+	tokenManagers map[string]*amazon.TokenManager
 }
 
-func NewCampaignOrchestrator(client *amazon.Client, writer *db.Writer) *CampaignOrchestrator {
+func NewCampaignOrchestrator(clientID, clientSecret string, encryptionKey []byte, writer *db.Writer) *CampaignOrchestrator {
 	return &CampaignOrchestrator{
-		tokenManager: amazon.NewTokenManager(client),
-		amazonClient: client,
-		writer:       writer,
+		clientID:      clientID,
+		clientSecret:  clientSecret,
+		encryptionKey: encryptionKey,
+		writer:        writer,
+		apiClient:     amazon.NewClient(clientID, clientSecret, ""),
 	}
 }
 
 // RunCampaignSync fetches and upserts SP campaigns for all active accounts.
-// A failure on one account is logged and skipped; other accounts continue.
+// A failure on one account is logged and skipped; other accounts continue —
+// this also covers an account whose manager account's token failed to
+// decrypt/exchange, since that surfaces as a per-account syncAccount error
+// like any other.
 func (o *CampaignOrchestrator) RunCampaignSync(ctx context.Context) (CampaignResult, error) {
 	logID, err := o.writer.CreateSyncLog(ctx, "ads_campaigns")
 	if err != nil {
@@ -54,6 +70,8 @@ func (o *CampaignOrchestrator) RunCampaignSync(ctx context.Context) (CampaignRes
 		_ = o.writer.CompleteSyncSuccess(ctx, logID, 0)
 		return CampaignResult{}, nil
 	}
+
+	o.tokenManagers = buildTokenManagers(ctx, o.writer, o.clientID, o.clientSecret, o.encryptionKey, "[campaigns]")
 
 	var result CampaignResult
 	result.AccountsProcessed = len(accounts)
@@ -76,13 +94,17 @@ func (o *CampaignOrchestrator) RunCampaignSync(ctx context.Context) (CampaignRes
 }
 
 func (o *CampaignOrchestrator) syncAccount(ctx context.Context, acct db.AdsAccount) (int, error) {
-	accessToken, err := o.tokenManager.Token(ctx)
+	tokenManager, ok := o.tokenManagers[acct.AdsManagerAccountID]
+	if !ok {
+		return 0, fmt.Errorf("no token manager for manager account %q (unset, or its token failed to init)", acct.AdsManagerAccountID)
+	}
+	accessToken, err := tokenManager.Token(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("get access token: %w", err)
 	}
 
 	baseURL := amazon.RegionBaseURL(acct.Region)
-	campaigns, totalResults, err := o.amazonClient.ListSPCampaigns(ctx, accessToken, acct.ProfileID, baseURL)
+	campaigns, totalResults, err := o.apiClient.ListSPCampaigns(ctx, accessToken, acct.ProfileID, baseURL)
 	if err != nil {
 		return 0, fmt.Errorf("list SP campaigns: %w", err)
 	}

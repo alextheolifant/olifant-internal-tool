@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"log"
 	"os"
 
-	"olifant/sync-ads-api/internal/amazon"
 	"olifant/sync-ads-api/internal/db"
 	"olifant/sync-ads-api/internal/sync"
 )
@@ -18,15 +18,24 @@ func requireEnv(key string) string {
 	return v
 }
 
+func decodeKey(b64 string) []byte {
+	key, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		log.Fatalf("SP_TOKEN_ENCRYPTION_KEY is not valid base64: %v", err)
+	}
+	if len(key) != 32 {
+		log.Fatalf("SP_TOKEN_ENCRYPTION_KEY must decode to 32 bytes, got %d", len(key))
+	}
+	return key
+}
+
 func main() {
 	ctx := context.Background()
 
-	clientID     := requireEnv("ADS_CLIENT_ID")
+	clientID := requireEnv("ADS_CLIENT_ID")
 	clientSecret := requireEnv("ADS_CLIENT_SECRET")
-	refreshToken := requireEnv("ADS_REFRESH_TOKEN")
-	databaseURL  := requireEnv("DATABASE_URL")
-
-	amazonClient := amazon.NewClient(clientID, clientSecret, refreshToken)
+	encryptionKey := decodeKey(requireEnv("SP_TOKEN_ENCRYPTION_KEY"))
+	databaseURL := requireEnv("DATABASE_URL")
 
 	writer, err := db.NewWriter(ctx, databaseURL)
 	if err != nil {
@@ -34,7 +43,7 @@ func main() {
 	}
 	defer writer.Close()
 
-	orchestrator := sync.NewCampaignOrchestrator(amazonClient, writer)
+	orchestrator := sync.NewCampaignOrchestrator(clientID, clientSecret, encryptionKey, writer)
 
 	log.Println("[campaigns] starting SP campaign sync")
 	result, err := orchestrator.RunCampaignSync(ctx)

@@ -11,12 +11,12 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"flag"
 	"log"
 	"os"
 	"time"
 
-	"olifant/sync-ads-api/internal/amazon"
 	"olifant/sync-ads-api/internal/db"
 	"olifant/sync-ads-api/internal/sync"
 )
@@ -33,11 +33,9 @@ func main() {
 
 	log.Printf("sync-metrics: range %s → %s", *startDate, *endDate)
 
-	amazonClient := amazon.NewClient(
-		requireEnv("ADS_CLIENT_ID"),
-		requireEnv("ADS_CLIENT_SECRET"),
-		requireEnv("ADS_REFRESH_TOKEN"),
-	)
+	clientID := requireEnv("ADS_CLIENT_ID")
+	clientSecret := requireEnv("ADS_CLIENT_SECRET")
+	encryptionKey := decodeKey(requireEnv("SP_TOKEN_ENCRYPTION_KEY"))
 
 	writer, err := db.NewWriter(ctx, requireEnv("DATABASE_URL"))
 	if err != nil {
@@ -56,7 +54,7 @@ func main() {
 	}
 	log.Printf("found %d active accounts", len(accounts))
 
-	orchestrator := sync.NewMetricsOrchestrator(amazonClient, writer, chWriter)
+	orchestrator := sync.NewMetricsOrchestrator(clientID, clientSecret, encryptionKey, writer, chWriter)
 	result, err := orchestrator.SyncMetrics(ctx, accounts, *startDate, *endDate)
 	if err != nil {
 		log.Fatalf("sync failed: %v", err)
@@ -76,4 +74,15 @@ func requireEnv(key string) string {
 		log.Fatalf("required env var %s is not set", key)
 	}
 	return v
+}
+
+func decodeKey(b64 string) []byte {
+	key, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		log.Fatalf("SP_TOKEN_ENCRYPTION_KEY is not valid base64: %v", err)
+	}
+	if len(key) != 32 {
+		log.Fatalf("SP_TOKEN_ENCRYPTION_KEY must decode to 32 bytes, got %d", len(key))
+	}
+	return key
 }

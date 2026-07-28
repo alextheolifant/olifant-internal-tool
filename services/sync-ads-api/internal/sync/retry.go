@@ -30,6 +30,7 @@ type RetryResult struct {
 // FAILED_PERMANENT instead of being re-submitted.
 func (o *MetricsOrchestrator) RetryFailedReports(ctx context.Context) (*RetryResult, error) {
 	result := &RetryResult{}
+	o.tokenManagers = buildTokenManagers(ctx, o.writer, o.clientID, o.clientSecret, o.encryptionKey, "[retry]")
 
 	logID, err := o.writer.CreateSyncLog(ctx, syncTypeAdsMetricsRetry)
 	if err != nil {
@@ -53,12 +54,6 @@ func (o *MetricsOrchestrator) RetryFailedReports(ctx context.Context) (*RetryRes
 
 	log.Printf("retry-reports: found %d terminal report(s)", len(rows))
 
-	token, err := o.tokens.Token(ctx)
-	if err != nil {
-		_ = o.writer.CompleteSyncFailure(ctx, logID, 0, err.Error())
-		return nil, fmt.Errorf("get token: %w", err)
-	}
-
 	for _, row := range rows {
 		if row.RetryCount >= retryCap {
 			reason := fmt.Sprintf("retry cap (%d) reached", retryCap)
@@ -75,7 +70,22 @@ func (o *MetricsOrchestrator) RetryFailedReports(ctx context.Context) (*RetryRes
 			continue
 		}
 
-		reportID, err := o.amazonClient.RequestReport(ctx, token, baseURL, row.ProfileID, row.StartDate, row.EndDate)
+		// Resolved per-row — different terminal rows can belong to different
+		// manager accounts, unlike the single shared token this used to be.
+		tokenManager, ok := o.tokenManagers[row.AdsManagerAccountID]
+		if !ok {
+			log.Printf("  account %s: no token manager for manager account %q — skipping", row.ProfileID, row.AdsManagerAccountID)
+			result.AccountsFailed++
+			continue
+		}
+		token, err := tokenManager.Token(ctx)
+		if err != nil {
+			log.Printf("  account %s: get token error: %v — skipping", row.ProfileID, err)
+			result.AccountsFailed++
+			continue
+		}
+
+		reportID, err := o.apiClient.RequestReport(ctx, token, baseURL, row.ProfileID, row.StartDate, row.EndDate)
 		if err != nil {
 			log.Printf("  account %s: RequestReport error: %v — leaving as-is", row.ProfileID, err)
 			result.AccountsFailed++

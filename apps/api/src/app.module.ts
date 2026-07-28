@@ -13,6 +13,7 @@ import { CampaignsModule } from './modules/campaigns/campaigns.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { AiModule } from './modules/ai/ai.module';
 import { SpApiModule } from './modules/sp-api/sp-api.module';
+import { AdsApiModule } from './modules/ads-api/ads-api.module';
 import { AnomaliesModule } from './modules/anomalies/anomalies.module';
 import { ProposalsModule } from './modules/proposals/proposals.module';
 import { ReportsModule } from './modules/reports/reports.module';
@@ -39,6 +40,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     SyncModule,
     AiModule,
     SpApiModule,
+    AdsApiModule,
     AnomaliesModule,
     ProposalsModule,
     ReportsModule,

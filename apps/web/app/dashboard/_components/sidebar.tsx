@@ -9,6 +9,7 @@ const ICONS: Record<string, (props: { className?: string }) => React.ReactElemen
   "/dashboard/chat": IconSparkle,
   "/dashboard/sqp": IconSearch,
   "/dashboard/audit": IconCheck,
+  "/dashboard/settings": IconGear,
 };
 
 export default function Sidebar() {
@@ -97,6 +98,20 @@ function IconCheck({ className }: { className?: string }) {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
       <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.4" />
       <path d="M5.5 8.2 7.2 9.9 10.5 6.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconGear({ className }: { className?: string }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+      <circle cx="8" cy="8" r="2.3" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M8 2.2v1.6M8 12.2v1.6M13.8 8h-1.6M3.8 8H2.2M11.9 4.1l-1.1 1.1M5.2 10.7l-1.1 1.1M11.9 11.9l-1.1-1.1M5.2 5.3 4.1 4.1"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }

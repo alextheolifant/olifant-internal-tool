@@ -8,23 +8,33 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"time"
 
 	"olifant/sync-ads-api/internal/amazon"
 	"olifant/sync-ads-api/internal/db"
+	"olifant/sync-ads-api/internal/tokencrypto"
 )
 
 const syncTypeAdsProfiles = "ads_profiles"
 
 type Orchestrator struct {
-	amazonClient *amazon.Client
-	writer       *db.Writer
+	clientID      string
+	clientSecret  string
+	encryptionKey []byte
+	writer        *db.Writer
 }
 
-func NewOrchestrator(amazonClient *amazon.Client, writer *db.Writer) *Orchestrator {
-	return &Orchestrator{amazonClient: amazonClient, writer: writer}
+func NewOrchestrator(clientID, clientSecret string, encryptionKey []byte, writer *db.Writer) *Orchestrator {
+	return &Orchestrator{
+		clientID:      clientID,
+		clientSecret:  clientSecret,
+		encryptionKey: encryptionKey,
+		writer:        writer,
+	}
 }
 
-// RegionResult holds the per-region outcome of a profile fetch.
+// RegionResult holds the per-region outcome of a profile fetch, merged
+// across every manager account that was queried for that region.
 type RegionResult struct {
 	ProfilesFetched int
 	Failed          bool
@@ -39,18 +49,24 @@ type Result struct {
 	ByRegion         map[string]RegionResult
 }
 
-// taggedProfile pairs a profile with the region it came from.
+// taggedProfile pairs a profile with the region and manager account it came
+// from, plus that manager account's connected_at — needed to break ties if
+// the same profileId is returned by more than one manager account.
 type taggedProfile struct {
-	profile amazon.Profile
-	region  string
+	profile            amazon.Profile
+	region             string
+	managerAccountID   string
+	managerConnectedAt time.Time
 }
 
 // RunProfilesSync fetches every Amazon Advertising profile across all three
-// Amazon regions (NA, EU, FE) and upserts it into clients/amazon_ads_accounts.
-// If one region's call fails the others still proceed — partial success is
-// recorded. Profiles are processed sequentially (not concurrently) so that
-// two profiles for the same brand reliably resolve to the same client_id
-// within a single run.
+// Amazon regions (NA, EU, FE) for every active manager account, and upserts
+// each into clients/amazon_ads_accounts. A manager account whose token can't
+// be decrypted or exchanged is logged and skipped — it must not block the
+// others. If one region's call fails for one manager account, the others
+// still proceed — partial success is recorded. Profiles are processed
+// sequentially (not concurrently) so that two profiles for the same brand
+// reliably resolve to the same client_id within a single run.
 func (o *Orchestrator) RunProfilesSync(ctx context.Context) (Result, error) {
 	result := Result{ByRegion: make(map[string]RegionResult, len(amazon.Regions))}
 
@@ -62,33 +78,66 @@ func (o *Orchestrator) RunProfilesSync(ctx context.Context) (Result, error) {
 		return result, fmt.Errorf("mark sync running: %w", err)
 	}
 
-	token, err := o.amazonClient.ExchangeRefreshToken(ctx)
+	managerAccounts, err := o.writer.FetchActiveManagerAccounts(ctx)
 	if err != nil {
 		o.fail(ctx, logID, result.AccountsUpserted, err)
-		return result, fmt.Errorf("exchange refresh token: %w", err)
+		return result, fmt.Errorf("fetch active manager accounts: %w", err)
+	}
+	if len(managerAccounts) == 0 {
+		log.Println("no active manager accounts found")
+		if err := o.writer.CompleteSyncSuccess(ctx, logID, 0); err != nil {
+			return result, fmt.Errorf("complete sync success: %w", err)
+		}
+		return result, nil
 	}
 
-	// Fetch profiles from all three regions; continue on per-region failure.
+	// Fetch profiles from every region, for every manager account whose
+	// token exchange succeeds; continue on per-manager-account or per-region
+	// failure — one bad token must not block the rest.
 	var tagged []taggedProfile
-	for _, r := range amazon.Regions {
-		profiles, fetchErr := o.amazonClient.ListProfiles(ctx, token.AccessToken, r.BaseURL)
-		if fetchErr != nil {
-			log.Printf("region %s: fetch failed: %v", r.Name, fetchErr)
-			result.ByRegion[r.Name] = RegionResult{Failed: true, Error: fetchErr.Error()}
+	for _, ma := range managerAccounts {
+		refreshToken, err := tokencrypto.Decrypt(o.encryptionKey, ma.EncryptedRefreshToken)
+		if err != nil {
+			log.Printf("manager account %s: decrypt failed, skipping: %v", ma.ID, err)
 			continue
 		}
-		log.Printf("region %s: fetched %d profiles", r.Name, len(profiles))
-		result.ByRegion[r.Name] = RegionResult{ProfilesFetched: len(profiles)}
-		for _, p := range profiles {
-			tagged = append(tagged, taggedProfile{profile: p, region: r.Name})
+		client := amazon.NewClient(o.clientID, o.clientSecret, refreshToken)
+		token, err := client.ExchangeRefreshToken(ctx)
+		if err != nil {
+			log.Printf("manager account %s: token exchange failed, skipping: %v", ma.ID, err)
+			continue
+		}
+
+		for _, r := range amazon.Regions {
+			profiles, fetchErr := client.ListProfiles(ctx, token.AccessToken, r.BaseURL)
+			existing := result.ByRegion[r.Name]
+			if fetchErr != nil {
+				log.Printf("manager account %s region %s: fetch failed: %v", ma.ID, r.Name, fetchErr)
+				existing.Failed = true
+				existing.Error = fetchErr.Error()
+				result.ByRegion[r.Name] = existing
+				continue
+			}
+			log.Printf("manager account %s region %s: fetched %d profiles", ma.ID, r.Name, len(profiles))
+			existing.ProfilesFetched += len(profiles)
+			result.ByRegion[r.Name] = existing
+			for _, p := range profiles {
+				tagged = append(tagged, taggedProfile{
+					profile:            p,
+					region:             r.Name,
+					managerAccountID:   ma.ID,
+					managerConnectedAt: ma.ConnectedAt,
+				})
+			}
 		}
 	}
 
-	result.ProfilesFetched = len(tagged)
+	deduped := dedupeByProfileID(tagged)
+	result.ProfilesFetched = len(deduped)
 
 	// Upsert all collected profiles sequentially.
-	for _, tp := range tagged {
-		created, err := o.upsertProfile(ctx, tp.profile, tp.region)
+	for _, tp := range deduped {
+		created, err := o.upsertProfile(ctx, tp.profile, tp.region, tp.managerAccountID)
 		if err != nil {
 			o.fail(ctx, logID, result.AccountsUpserted, err)
 			return result, fmt.Errorf("upsert profile %d: %w", tp.profile.ProfileID, err)
@@ -105,9 +154,49 @@ func (o *Orchestrator) RunProfilesSync(ctx context.Context) (Result, error) {
 	return result, nil
 }
 
+// dedupeByProfileID collapses tagged profiles down to one per Amazon
+// profileId, in case the same profile is returned by more than one manager
+// account (shouldn't normally happen). The most-recently-connected manager
+// account wins; the loser is logged as a warning rather than silently
+// dropped. Preserves original encounter order (not map iteration order) so
+// upsertProfile's same-brand-across-regions sequential-resolution guarantee
+// still holds.
+func dedupeByProfileID(tagged []taggedProfile) []taggedProfile {
+	winners := make(map[int64]taggedProfile, len(tagged))
+	var order []int64
+
+	for _, tp := range tagged {
+		existing, seen := winners[tp.profile.ProfileID]
+		if !seen {
+			winners[tp.profile.ProfileID] = tp
+			order = append(order, tp.profile.ProfileID)
+			continue
+		}
+
+		winner, loser := existing, tp
+		if tp.managerConnectedAt.After(existing.managerConnectedAt) {
+			winner, loser = tp, existing
+			winners[tp.profile.ProfileID] = tp
+		}
+		log.Printf(
+			"WARN: profile %d returned by multiple manager accounts (%s connected %s, %s connected %s) — using %s (most recently connected)",
+			tp.profile.ProfileID,
+			loser.managerAccountID, loser.managerConnectedAt,
+			winner.managerAccountID, winner.managerConnectedAt,
+			winner.managerAccountID,
+		)
+	}
+
+	deduped := make([]taggedProfile, 0, len(order))
+	for _, id := range order {
+		deduped = append(deduped, winners[id])
+	}
+	return deduped
+}
+
 // upsertProfile resolves the profile's client and writes its ads account
 // row inside one transaction. Returns whether a new client was created.
-func (o *Orchestrator) upsertProfile(ctx context.Context, p amazon.Profile, region string) (bool, error) {
+func (o *Orchestrator) upsertProfile(ctx context.Context, p amazon.Profile, region, managerAccountID string) (bool, error) {
 	tx, err := o.writer.BeginTx(ctx)
 	if err != nil {
 		return false, fmt.Errorf("begin tx: %w", err)
@@ -131,6 +220,7 @@ func (o *Orchestrator) upsertProfile(ctx context.Context, p amazon.Profile, regi
 		AccountType:         p.AccountInfo.Type,
 		MarketplaceStringID: p.AccountInfo.MarketplaceStringID,
 		Region:              region,
+		AdsManagerAccountID: managerAccountID,
 	})
 	if err != nil {
 		return false, fmt.Errorf("upsert ads account: %w", err)
