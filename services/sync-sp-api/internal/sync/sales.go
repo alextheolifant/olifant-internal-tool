@@ -197,9 +197,10 @@ func (o *SalesOrchestrator) pollPendingReports(ctx context.Context, deadline tim
 		log.Printf("Phase 2: %d sales report(s) still pending, checking...", len(pending))
 
 		type pollResult struct {
-			row     db.PendingReportRequest
-			written int
-			err     error
+			row       db.PendingReportRequest
+			written   int
+			completed bool
+			err       error
 		}
 		pollCh := make(chan pollResult, len(pending))
 		pollSem := make(chan struct{}, phase2Concurrency)
@@ -246,6 +247,7 @@ func (o *SalesOrchestrator) pollPendingReports(ctx context.Context, deadline tim
 					} else {
 						_ = o.writer.DeleteReportRequest(ctx, r.ID)
 						pr.written = written
+						pr.completed = true
 					}
 
 				case "FATAL", "CANCELLED":
@@ -268,7 +270,7 @@ func (o *SalesOrchestrator) pollPendingReports(ctx context.Context, deadline tim
 			if pr.err != nil {
 				log.Printf("account %s: error: %v", pr.row.AmazonSPAccountID, pr.err)
 				result.AccountsFailed++
-			} else if pr.written > 0 {
+			} else if pr.completed {
 				result.AccountsOK++
 				result.RecordsWritten += pr.written
 				log.Printf("account %s: wrote %d daily sales rows", pr.row.AmazonSPAccountID, pr.written)
@@ -303,17 +305,12 @@ func (o *SalesOrchestrator) processCompleted(ctx context.Context, ac *accountCon
 
 	written := 0
 	for _, rec := range records {
-		date, ok := rec["date"]
-		if !ok || date == "" {
-			continue
-		}
-
 		if err := o.writer.UpsertSalesDaily(ctx, db.SalesDailyUpsert{
 			AmazonSPAccountID: row.AmazonSPAccountID,
-			Date:              date,
-			TotalSales:        amazon.TSVFloat(rec, "orderedProductSales"),
-			UnitsOrdered:      amazon.TSVInt(rec, "unitsOrdered"),
-			Orders:            amazon.TSVInt(rec, "totalOrderItems"),
+			Date:              rec.Date,
+			TotalSales:        rec.TotalSales,
+			UnitsOrdered:      rec.UnitsOrdered,
+			Orders:            rec.Orders,
 		}); err != nil {
 			return written, fmt.Errorf("upsert sales daily: %w", err)
 		}

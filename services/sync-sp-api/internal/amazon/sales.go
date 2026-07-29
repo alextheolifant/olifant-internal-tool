@@ -1,7 +1,6 @@
 package amazon
 
 import (
-	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -9,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 )
 
@@ -120,11 +118,20 @@ func (c *Client) GetReportStatus(ctx context.Context, accessToken string, region
 	})
 }
 
+// DailySales is one day's row parsed out of a GET_SALES_AND_TRAFFIC_REPORT.
+type DailySales struct {
+	Date         string
+	TotalSales   float64
+	UnitsOrdered int64
+	Orders       int64
+}
+
 // DownloadReport fetches the report document's signed download URL, then
-// downloads and decompresses (if needed) the underlying file. Amazon
-// documents GET_SALES_AND_TRAFFIC_REPORT as tab-delimited, not JSON, unlike
-// the Ads Reporting API — VERIFY the real downloaded shape during testing.
-func (c *Client) DownloadReport(ctx context.Context, accessToken string, region Region, reportDocumentID string) ([]map[string]string, error) {
+// downloads and decompresses (if needed) the underlying file.
+// GET_SALES_AND_TRAFFIC_REPORT is one of the SP-API reports that comes back
+// as JSON (salesAndTrafficByDate[]), not a flat/TSV file like most other
+// report types.
+func (c *Client) DownloadReport(ctx context.Context, accessToken string, region Region, reportDocumentID string) ([]DailySales, error) {
 	doc, err := withRetry(ctx, func() (*reportDocumentResponse, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, region.BaseURL+"/reports/2021-06-30/documents/"+reportDocumentID, nil)
 		if err != nil {
@@ -190,66 +197,47 @@ func (c *Client) DownloadReport(ctx context.Context, accessToken string, region 
 		return nil, fmt.Errorf("download report file: %w", err)
 	}
 
-	return parseTSV(rawBody)
+	return parseSalesAndTrafficReport(rawBody)
 }
 
-// parseTSV parses a tab-delimited report file: first line is the header row,
-// each subsequent line becomes a map keyed by header column name.
-func parseTSV(raw []byte) ([]map[string]string, error) {
-	scanner := bufio.NewScanner(bytes.NewReader(raw))
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+// salesAndTrafficReport mirrors the subset of GET_SALES_AND_TRAFFIC_REPORT's
+// JSON shape we need — one entry per date, agency-wide (not per-ASIN).
+type salesAndTrafficReport struct {
+	SalesAndTrafficByDate []struct {
+		Date        string `json:"date"`
+		SalesByDate struct {
+			OrderedProductSales struct {
+				Amount float64 `json:"amount"`
+			} `json:"orderedProductSales"`
+			UnitsOrdered    int64 `json:"unitsOrdered"`
+			TotalOrderItems int64 `json:"totalOrderItems"`
+		} `json:"salesByDate"`
+	} `json:"salesAndTrafficByDate"`
+}
 
-	if !scanner.Scan() {
-		if err := scanner.Err(); err != nil {
-			return nil, fmt.Errorf("read header: %w", err)
-		}
+// parseSalesAndTrafficReport parses the JSON report body into one DailySales
+// row per date present in salesAndTrafficByDate.
+func parseSalesAndTrafficReport(raw []byte) ([]DailySales, error) {
+	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil, nil
 	}
-	headers := strings.Split(scanner.Text(), "\t")
 
-	var records []map[string]string
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
+	var report salesAndTrafficReport
+	if err := json.Unmarshal(raw, &report); err != nil {
+		return nil, fmt.Errorf("decode sales and traffic report: %w", err)
+	}
+
+	records := make([]DailySales, 0, len(report.SalesAndTrafficByDate))
+	for _, d := range report.SalesAndTrafficByDate {
+		if d.Date == "" {
 			continue
 		}
-		fields := strings.Split(line, "\t")
-		row := make(map[string]string, len(headers))
-		for i, h := range headers {
-			if i < len(fields) {
-				row[h] = fields[i]
-			}
-		}
-		records = append(records, row)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan report body: %w", err)
+		records = append(records, DailySales{
+			Date:         d.Date,
+			TotalSales:   d.SalesByDate.OrderedProductSales.Amount,
+			UnitsOrdered: d.SalesByDate.UnitsOrdered,
+			Orders:       d.SalesByDate.TotalOrderItems,
+		})
 	}
 	return records, nil
-}
-
-// TSVFloat and TSVInt parse a TSV cell, treating missing/empty as zero rather
-// than erroring — VERIFY against real report output which fields can be blank.
-func TSVFloat(row map[string]string, key string) float64 {
-	v, ok := row[key]
-	if !ok || v == "" {
-		return 0
-	}
-	f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
-	if err != nil {
-		return 0
-	}
-	return f
-}
-
-func TSVInt(row map[string]string, key string) int64 {
-	v, ok := row[key]
-	if !ok || v == "" {
-		return 0
-	}
-	n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
-	if err != nil {
-		return 0
-	}
-	return n
 }

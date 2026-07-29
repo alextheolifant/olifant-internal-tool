@@ -597,10 +597,16 @@ type MetricUpsert struct {
 	Spend        float64
 	Sales        float64
 	Orders       int64
-	ACoS         float64
-	ROAS         float64
-	CPC          float64
-	CTR          float64
+	// ACoS/ROAS are pointers, not plain float64: campaign_metrics_daily
+	// stores them as numeric(8,4) (max magnitude ~9999.9999), but they're
+	// computed locally as unbounded ratios (cost/sales, sales/cost) — a
+	// campaign with near-zero sales relative to spend (or vice versa) can
+	// easily exceed that. nil means "not a meaningful/storable ratio for
+	// this row", not zero.
+	ACoS *float64
+	ROAS *float64
+	CPC  float64
+	CTR  float64
 }
 
 // UpsertMetric inserts or updates one row in campaign_metrics_daily.

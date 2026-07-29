@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,6 +14,23 @@ import (
 	"olifant/sync-ads-api/internal/amazon"
 	"olifant/sync-ads-api/internal/db"
 )
+
+// maxNumeric84 is the largest magnitude campaign_metrics_daily's acos/roas
+// columns (numeric(8,4)) can hold — 8 total digits, 4 after the decimal.
+const maxNumeric84 = 9999.9999
+
+// nullIfOverflowsNumeric84 returns nil instead of a value that would exceed
+// what a numeric(8,4) Postgres column can store. ACoS/ROAS are computed
+// locally as unbounded ratios (cost/sales, sales/cost) — a campaign with
+// near-zero sales against real spend (or vice versa) produces a
+// mathematically real but unstorable number. nil is more honest than either
+// crashing the whole upsert or silently clamping to a made-up ceiling.
+func nullIfOverflowsNumeric84(v float64) *float64 {
+	if math.Abs(v) > maxNumeric84 {
+		return nil
+	}
+	return &v
+}
 
 const (
 	syncTypeAdsMetrics = "ads_metrics"
@@ -431,12 +449,19 @@ func (o *MetricsOrchestrator) processCompleted(
 			Spend:        cost,
 			Sales:        sales,
 			Orders:       purchases,
-			ACoS:         acos,
-			ROAS:         roas,
+			ACoS:         nullIfOverflowsNumeric84(acos),
+			ROAS:         nullIfOverflowsNumeric84(roas),
 			CPC:          cpc,
 			CTR:          ctr,
 		}); err != nil {
-			return written, fmt.Errorf("upsert metric: %w", err)
+			// Log and continue, not abort — one pathological campaign (e.g.
+			// near-zero sales against real spend, an extreme but real ratio)
+			// must not drop every other campaign's otherwise-valid data in
+			// this same report, and must not fail the whole report and
+			// force a full resubmission via retry-reports.
+			log.Printf("WARN: account %s: upsert metric for campaign %s failed, skipping this row: %v",
+				row.ProfileID, amazonCampaignID, err)
+			continue
 		}
 
 		chRows = append(chRows, db.CHRow{
