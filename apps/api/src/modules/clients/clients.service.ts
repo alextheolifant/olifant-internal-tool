@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DrizzleService } from '../../db/drizzle.service';
+import { RedisService } from '../../db/redis.service';
 import { clients } from '../../db/schema';
 import { UpdateClientDto } from './dto/update-client.dto';
 
@@ -51,7 +52,12 @@ export interface AccountRow {
 
 @Injectable()
 export class ClientsService {
-  constructor(private readonly drizzle: DrizzleService) {}
+  private readonly logger = new Logger(ClientsService.name);
+
+  constructor(
+    private readonly drizzle: DrizzleService,
+    private readonly redis: RedisService,
+  ) {}
 
   // ── GET /clients ─────────────────────────────────────────────────────────
 
@@ -117,6 +123,12 @@ export class ClientsService {
       .where(eq(clients.id, id))
       .returning();
 
+    // /metrics/clients caches the full client list (name, tier, status,
+    // goals — everything read here) for 5 minutes. Without this, an edit
+    // here silently doesn't show up on the dashboard until the cache
+    // naturally expires.
+    await this.invalidateClientMetricsCache();
+
     return {
       id: row.id,
       name: row.name,
@@ -133,5 +145,20 @@ export class ClientsService {
         currencyCode: a.currencyCode,
       })),
     };
+  }
+
+  // Cache keys are per date-range/marketplace (metrics:clients:v1:{from}:{to}:{mkt}),
+  // so there's no single key to invalidate — clear every cached variant
+  // rather than trying to enumerate which ranges a client edit could affect.
+  // Non-fatal: a cache-clear failure must not fail the client update itself.
+  private async invalidateClientMetricsCache(): Promise<void> {
+    try {
+      const keys = await this.redis.client.keys('metrics:clients:*');
+      if (keys.length > 0) await this.redis.client.del(...keys);
+    } catch (err) {
+      this.logger.error(
+        `Failed to invalidate metrics:clients cache: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 }
