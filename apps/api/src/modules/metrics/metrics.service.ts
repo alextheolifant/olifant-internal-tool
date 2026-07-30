@@ -155,7 +155,12 @@ export class MetricsService {
     // ── 3. Build profile_id → { clientId, marketplace, currencyCode } map ────
     const profileMap = new Map<
       string,
-      { clientId: string; marketplace: string; currencyCode: string }
+      {
+        clientId: string;
+        marketplace: string;
+        marketplaceStringId: string;
+        currencyCode: string;
+      }
     >();
     for (const c of filtered) {
       for (const a of c.amazonAdsAccounts) {
@@ -163,6 +168,7 @@ export class MetricsService {
           profileMap.set(a.profileId, {
             clientId: c.id,
             marketplace: a.marketplace ?? a.countryCode ?? '',
+            marketplaceStringId: a.marketplaceStringId ?? '',
             currencyCode: a.currencyCode ?? '',
           });
         }
@@ -189,6 +195,7 @@ export class MetricsService {
       byDate: Map<string, number>;
       clientId: string;
       marketplace: string;
+      marketplaceStringId: string;
       currencyCode: string;
       profileId: string;
     }
@@ -219,7 +226,15 @@ export class MetricsService {
       agg.byDate.set(row.date, prev + Number(row.spend));
     }
 
-    // ── 7. Client-level aggregation ───────────────────────────────────────────
+    // ── 7. Resolve organic revenue (SP-API), client- and marketplace-grain ───
+    const { connected, totalSalesByClient, totalSalesByClientMarketplace } =
+      await this.fetchOrganicSalesInputs(
+        filtered.map((c) => c.id),
+        from,
+        to,
+      );
+
+    // ── 8. Client-level aggregation ───────────────────────────────────────────
     interface ClientAgg {
       id: string;
       name: string;
@@ -260,16 +275,24 @@ export class MetricsService {
       if (!client) continue;
 
       const trend = allDates.map((d) => agg.byDate.get(d) ?? 0);
-      // Total sales from SP-API is only ever known at the client grain (an SP
-      // account isn't tied to one ads profile/marketplace) — never computable
-      // per individual account row.
+      // Organic revenue per marketplace only resolves when SP-API's
+      // marketplace ID (amazon_sp_accounts.marketplace) matches this ads
+      // profile's marketplaceStringId — no match (SP-API not connected for
+      // this specific marketplace, or the two APIs' grains don't align)
+      // falls back to null, same as the client-grain case.
+      const accOrgRev = this.resolveAccountOrgRev(
+        agg.clientId,
+        agg.marketplaceStringId,
+        agg.ppcRev,
+        totalSalesByClientMarketplace,
+      );
       const accDerived = deriveMetrics(
         agg.spend,
         agg.ppcRev,
         agg.ppcOrd,
         agg.clicks,
         agg.impr,
-        null,
+        accOrgRev,
       );
 
       client.accountRows.push({
@@ -281,7 +304,7 @@ export class MetricsService {
         ppcOrd: agg.ppcOrd,
         clicks: agg.clicks,
         impr: agg.impr,
-        orgRev: null,
+        orgRev: accOrgRev,
         orgOrd: null,
         units: null,
         ...accDerived,
@@ -297,14 +320,6 @@ export class MetricsService {
         client.byDate.set(date, (client.byDate.get(date) ?? 0) + spend);
       }
     }
-
-    // ── 8. Resolve organic revenue (SP-API) per client, where connected ───────
-    const { connected, totalSalesByClient } =
-      await this.fetchOrganicSalesInputs(
-        filtered.map((c) => c.id),
-        from,
-        to,
-      );
 
     // ── 9. Build client response rows ─────────────────────────────────────────
     const clients = [...clientAgg.values()].map((c) => {
@@ -391,8 +406,10 @@ export class MetricsService {
 
   // ── Organic revenue (SP-API) ─────────────────────────────────────────────────
 
-  // Returns which clients have an active SP-API connection, and each
-  // connected client's total (organic + PPC) sales for the date range.
+  // Returns which clients have an active SP-API connection, each connected
+  // client's total (organic + PPC) sales for the date range, and the same
+  // total broken out per SP-API marketplace ID (amazon_sp_accounts.marketplace)
+  // for matching against an ads profile's marketplaceStringId.
   private async fetchOrganicSalesInputs(
     clientIds: string[],
     from: string,
@@ -400,9 +417,14 @@ export class MetricsService {
   ): Promise<{
     connected: Set<string>;
     totalSalesByClient: Map<string, number>;
+    totalSalesByClientMarketplace: Map<string, number>;
   }> {
     if (clientIds.length === 0) {
-      return { connected: new Set(), totalSalesByClient: new Map() };
+      return {
+        connected: new Set(),
+        totalSalesByClient: new Map(),
+        totalSalesByClientMarketplace: new Map(),
+      };
     }
 
     const connectedRows = await this.drizzle.db
@@ -419,6 +441,7 @@ export class MetricsService {
     const salesRows = await this.drizzle.db
       .select({
         clientId: amazonSpAccounts.clientId,
+        marketplace: amazonSpAccounts.marketplace,
         totalSales: sql<string>`COALESCE(SUM(${spSalesDaily.totalSales}), 0)`,
       })
       .from(spSalesDaily)
@@ -433,14 +456,51 @@ export class MetricsService {
           lte(spSalesDaily.date, to),
         ),
       )
-      .groupBy(amazonSpAccounts.clientId);
+      .groupBy(amazonSpAccounts.clientId, amazonSpAccounts.marketplace);
 
     const totalSalesByClient = new Map<string, number>();
+    const totalSalesByClientMarketplace = new Map<string, number>();
     for (const row of salesRows) {
-      totalSalesByClient.set(row.clientId, Number(row.totalSales));
+      const sales = Number(row.totalSales);
+      totalSalesByClient.set(
+        row.clientId,
+        (totalSalesByClient.get(row.clientId) ?? 0) + sales,
+      );
+      if (row.marketplace) {
+        totalSalesByClientMarketplace.set(
+          `${row.clientId}::${row.marketplace}`,
+          sales,
+        );
+      }
     }
 
-    return { connected, totalSalesByClient };
+    return { connected, totalSalesByClient, totalSalesByClientMarketplace };
+  }
+
+  // Per-marketplace counterpart to resolveClientOrgRev — only resolves when
+  // SP-API's marketplace ID for this client has a matching sales row; no
+  // match (not connected for this marketplace, or the ads profile has no
+  // marketplaceStringId) falls back to null, never fabricated as 0.
+  private resolveAccountOrgRev(
+    clientId: string,
+    marketplaceStringId: string,
+    ppcRev: number,
+    totalSalesByClientMarketplace: Map<string, number>,
+  ): number | null {
+    if (!marketplaceStringId) return null;
+
+    const totalSales = totalSalesByClientMarketplace.get(
+      `${clientId}::${marketplaceStringId}`,
+    );
+    if (totalSales === undefined) return null;
+
+    const { orgRev, floored } = floorOrgRev(totalSales, ppcRev);
+    if (floored) {
+      this.logger.warn(
+        `Client ${clientId} marketplace ${marketplaceStringId}: organic revenue floored at 0 (SP-API total sales ${totalSales} < PPC revenue ${ppcRev}).`,
+      );
+    }
+    return orgRev;
   }
 
   // null = not SP-API connected (genuinely unknown, never fabricated as 0).
