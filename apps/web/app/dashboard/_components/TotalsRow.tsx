@@ -51,7 +51,9 @@ export function TotalsRow({ totals, viewMode, showTrends, currencyCode, approx }
       <td className={cell}>{xfmt(totals.roas)}</td>
 
       {/* Organic % */}
-      <td className={nullCell}>{EM_DASH}</td>
+      <td className={totals.organicPct !== null ? cell : nullCell}>
+        {totals.organicPct !== null ? pct(totals.organicPct) : EM_DASH}
+      </td>
 
       {/* CVR */}
       <td className={cell}>{pct(totals.cvr, 2)}</td>

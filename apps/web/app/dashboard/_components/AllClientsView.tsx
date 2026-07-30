@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useTransition } from "react";
-import type { ClientRow, ViewMode, ClientStatus } from "../_lib/types";
-import { computeTotals } from "../_lib/totals";
+import type { ClientRow, ViewMode, ClientStatus, Totals } from "../_lib/types";
 import { apiFetch } from "@/lib/api";
 import { resolveCurrency } from "../_lib/format";
 import { useMarketplace } from "../_lib/marketplace-context";
@@ -21,6 +20,12 @@ const STATUS_TO_API: Record<ClientStatus, string> = {
 };
 const TIER_TO_API: Record<number, string> = { 1: "t1", 2: "t2", 3: "t3" };
 
+const EMPTY_TOTALS: Totals = {
+  spend: 0, ppcRev: 0, orgRev: null, ppcOrd: 0, orgOrd: null, clicks: 0, impr: 0, units: null,
+  revenue: null, tacos: null, acos: null, roas: null, cpc: null, ctr: null, cvr: null,
+  organicPct: null, totalOrders: null, activeCount: 0, totalCount: 0,
+};
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function AllClientsView() {
@@ -32,6 +37,7 @@ export function AllClientsView() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const [clients, setClients]   = useState<ClientRow[]>([]);
+  const [totals, setTotals]     = useState<Totals>(EMPTY_TOTALS);
   const [isLoading, setLoading] = useState(true);
   const [error, setError]       = useState<string | null>(null);
   const [, startTransition]     = useTransition();
@@ -49,7 +55,8 @@ export function AllClientsView() {
     fetchClients(range.from, range.to, marketplace, controller.signal)
       .then((data) => {
         startTransition(() => {
-          setClients(data);
+          setClients(data.clients);
+          setTotals(data.totals);
           setLoading(false);
         });
       })
@@ -112,7 +119,6 @@ export function AllClientsView() {
     }
   }, [editTarget, load]);
 
-  const totals = useMemo(() => computeTotals(clients), [clients]);
   const { code: portfolioCc, approx: portfolioApprox } = useMemo(
     () => resolveCurrency(clients.flatMap((c) => c.accounts.map((a) => a.currencyCode))),
     [clients],

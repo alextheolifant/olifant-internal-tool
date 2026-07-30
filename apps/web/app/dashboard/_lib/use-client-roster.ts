@@ -22,7 +22,7 @@ export function useClientRoster() {
     const controller = new AbortController();
     setLoading(true);
     fetchClients(range.from, range.to, marketplace, controller.signal)
-      .then((data) => setClients(data))
+      .then((data) => setClients(data.clients))
       .catch((e) => {
         if (e instanceof Error && e.name === "AbortError") return;
       })

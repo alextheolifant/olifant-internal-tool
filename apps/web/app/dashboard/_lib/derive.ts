@@ -27,25 +27,3 @@ export function derive(raw: RawInputs): DerivedMetrics {
   return { revenue, tacos, acos, roas, cpc, ctr, cvr, organicPct, totalOrders };
 }
 
-/**
- * Sum two RawInputs objects component-by-component.
- * Null + anything = null (one missing SP-API feed poisons the portfolio total).
- */
-export function sumRaw(a: RawInputs, b: RawInputs): RawInputs {
-  return {
-    spend:  a.spend  + b.spend,
-    ppcRev: a.ppcRev + b.ppcRev,
-    orgRev: a.orgRev !== null && b.orgRev !== null ? a.orgRev + b.orgRev : null,
-    ppcOrd: a.ppcOrd + b.ppcOrd,
-    orgOrd: a.orgOrd !== null && b.orgOrd !== null ? a.orgOrd + b.orgOrd : null,
-    clicks: a.clicks + b.clicks,
-    impr:   a.impr   + b.impr,
-    units:  a.units  !== null && b.units  !== null ? a.units  + b.units  : null,
-  };
-}
-
-export const ZERO_RAW: RawInputs = {
-  spend: 0, ppcRev: 0, orgRev: null,
-  ppcOrd: 0, orgOrd: null,
-  clicks: 0, impr: 0, units: null,
-};
