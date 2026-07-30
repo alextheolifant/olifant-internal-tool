@@ -124,9 +124,26 @@ export function AllClientsView() {
     [clients],
   );
 
+  // How many clients actually fed real organic revenue into `totals` — not
+  // just "has an SP-API row" (spConnected), but "orgRev resolved for this
+  // date range" — so the caption reflects exactly what's blended into the
+  // Revenue/TACoS/Organic% cards, not just connection status.
+  const orgRevConnectedCount = useMemo(
+    () => clients.filter((c) => c.orgRev !== null).length,
+    [clients],
+  );
+
   return (
     <div className="flex h-full flex-col bg-canvas overflow-auto">
-      <SummaryCards totals={totals} dateLabel={range.label} isLoading={isLoading} currencyCode={portfolioCc} approx={portfolioApprox} />
+      <SummaryCards
+        totals={totals}
+        dateLabel={range.label}
+        isLoading={isLoading}
+        currencyCode={portfolioCc}
+        approx={portfolioApprox}
+        orgRevConnectedCount={orgRevConnectedCount}
+        clientCount={clients.length}
+      />
 
       <div className="flex flex-1 items-start gap-4 p-4">
         <div className="flex min-w-0 flex-1 flex-col rounded-xl border border-neutral-200 shadow-sm overflow-hidden">

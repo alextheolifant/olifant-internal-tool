@@ -8,7 +8,15 @@ interface SummaryCardsProps {
   isLoading: boolean;
   currencyCode: string;
   approx: boolean;
+  orgRevConnectedCount: number;
+  clientCount: number;
 }
+
+// These three cards all derive from a revenue figure that's only ever
+// partially organic-complete (real ppcRev everywhere + real orgRev only for
+// SP-API-connected clients) — flag that partiality rather than let the
+// number imply full coverage.
+const PARTIAL_ORG_REV_CARD_IDS = new Set(["revenue", "tacos", "organicPct"]);
 
 interface CardDef {
   id: string;
@@ -56,13 +64,26 @@ const CARDS: CardDef[] = [
   },
 ];
 
-export function SummaryCards({ totals, dateLabel, isLoading, currencyCode, approx }: SummaryCardsProps) {
+export function SummaryCards({
+  totals,
+  dateLabel,
+  isLoading,
+  currencyCode,
+  approx,
+  orgRevConnectedCount,
+  clientCount,
+}: SummaryCardsProps) {
+  const orgRevCaption =
+    clientCount > 0 && orgRevConnectedCount < clientCount
+      ? `Organic revenue reflects ${orgRevConnectedCount} of ${clientCount} clients connected`
+      : null;
 
   return (
     <div className="grid grid-cols-2 gap-3 px-5 py-4 sm:grid-cols-3 xl:grid-cols-6">
       {CARDS.map((card) => {
         const value = card.value(totals, currencyCode, approx);
         const colorCls = card.colorClass(totals);
+        const caption = PARTIAL_ORG_REV_CARD_IDS.has(card.id) ? orgRevCaption : null;
 
         return (
           <div
@@ -82,6 +103,12 @@ export function SummaryCards({ totals, dateLabel, isLoading, currencyCode, appro
             )}
 
             <p className="text-[11px] text-neutral-400">{dateLabel}</p>
+
+            {!isLoading && caption && (
+              <p className="text-[10px] leading-snug text-amber-600" title={caption}>
+                {caption}
+              </p>
+            )}
           </div>
         );
       })}
