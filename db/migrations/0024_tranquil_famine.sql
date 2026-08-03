@@ -1,0 +1,1 @@
+ALTER TABLE "catalog_items" ADD COLUMN "seller_sku" varchar(255);

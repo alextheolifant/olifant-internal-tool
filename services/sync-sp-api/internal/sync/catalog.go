@@ -12,42 +12,33 @@ import (
 	"olifant/sync-sp-api/internal/tokencrypto"
 )
 
-const (
-	syncTypeSpOrders = "sp_orders"
+const syncTypeCatalogItems = "catalog_items"
 
-	phase1Concurrency = 5
-	phase2Concurrency = 10
-	pollInterval      = 5 * time.Minute
-	maxWait           = 16 * time.Minute // real reports take ~10 min; give 16 min headroom
-)
-
-// SalesResult summarises one SyncSales run.
-type SalesResult struct {
+// CatalogResult summarises one SyncCatalog run.
+type CatalogResult struct {
 	AccountsOK     int
 	AccountsFailed int
 	RecordsWritten int
 }
 
-// accountContext bundles the per-account amazon.Client + TokenManager + region
-// needed across both phases. Refresh tokens are per-seller (unlike the Ads
-// API's single app-level token), so each account gets its own client/manager.
-type accountContext struct {
-	account db.SpAccount
-	client  *amazon.Client
-	tokens  *amazon.TokenManager
-	region  amazon.Region
-}
-
-// SalesOrchestrator drives the two-phase GET_SALES_AND_TRAFFIC_REPORT sync.
-type SalesOrchestrator struct {
+// CatalogOrchestrator drives the two-phase GET_MERCHANT_LISTINGS_ALL_DATA
+// sync — same request/poll/download shape as SalesOrchestrator, reusing the
+// sp_report_requests tracking table and amazon.Client's generic report
+// methods. GET_MERCHANT_LISTINGS_ALL_DATA is a snapshot report (no date
+// range), but sp_report_requests.start_date/end_date are NOT NULL, so
+// today's date is used as a sentinel value for both — purely a dedup/resume
+// key ("have we already requested a listings snapshot today for this
+// account?"), not a real date range. Reusing that table as-is avoids
+// migrating a column shared with the (working, unrelated) sales sync.
+type CatalogOrchestrator struct {
 	writer          *db.Writer
 	lwaClientID     string
 	lwaClientSecret string
 	encryptionKey   []byte
 }
 
-func NewSalesOrchestrator(w *db.Writer, lwaClientID, lwaClientSecret string, encryptionKey []byte) *SalesOrchestrator {
-	return &SalesOrchestrator{
+func NewCatalogOrchestrator(w *db.Writer, lwaClientID, lwaClientSecret string, encryptionKey []byte) *CatalogOrchestrator {
+	return &CatalogOrchestrator{
 		writer:          w,
 		lwaClientID:     lwaClientID,
 		lwaClientSecret: lwaClientSecret,
@@ -55,7 +46,7 @@ func NewSalesOrchestrator(w *db.Writer, lwaClientID, lwaClientSecret string, enc
 	}
 }
 
-func (o *SalesOrchestrator) buildContexts(accounts []db.SpAccount) map[string]*accountContext {
+func (o *CatalogOrchestrator) buildContexts(accounts []db.SpAccount) map[string]*accountContext {
 	contexts := make(map[string]*accountContext, len(accounts))
 	for _, a := range accounts {
 		refreshToken, err := tokencrypto.Decrypt(o.encryptionKey, a.RefreshTokenEncrypted)
@@ -74,11 +65,13 @@ func (o *SalesOrchestrator) buildContexts(accounts []db.SpAccount) map[string]*a
 	return contexts
 }
 
-// SyncSales is the single entry point for the sales/traffic sync.
-// startDate/endDate are "YYYY-MM-DD".
-func (o *SalesOrchestrator) SyncSales(ctx context.Context, accounts []db.SpAccount, startDate, endDate string) (*SalesResult, error) {
-	result := &SalesResult{}
+// SyncCatalog is the single entry point for the listings/catalog sync.
+func (o *CatalogOrchestrator) SyncCatalog(ctx context.Context, accounts []db.SpAccount) (*CatalogResult, error) {
+	result := &CatalogResult{}
 	contexts := o.buildContexts(accounts)
+
+	// Sentinel "date range" — see type doc. Real value, just not a real range.
+	today := time.Now().UTC().Format("2006-01-02")
 
 	// ── Phase 1: submit report requests for every account concurrently ────────
 	type phase1Out struct {
@@ -90,8 +83,7 @@ func (o *SalesOrchestrator) SyncSales(ctx context.Context, accounts []db.SpAccou
 	outCh := make(chan phase1Out, len(accounts))
 	var wg sync.WaitGroup
 
-	log.Printf("Phase 1: submitting sales report requests for %d accounts (start=%s end=%s)",
-		len(contexts), startDate, endDate)
+	log.Printf("Phase 1: submitting merchant listings report requests for %d accounts", len(contexts))
 
 	for _, ac := range contexts {
 		wg.Add(1)
@@ -103,19 +95,19 @@ func (o *SalesOrchestrator) SyncSales(ctx context.Context, accounts []db.SpAccou
 			out := phase1Out{accountID: ac.account.ID}
 			a := ac.account
 
-			_, existingReportID, found, err := o.writer.FindActiveReportRequest(ctx, a.ID, startDate, endDate)
+			_, existingReportID, found, err := o.writer.FindActiveReportRequest(ctx, a.ID, today, today)
 			if err != nil {
 				out.err = fmt.Errorf("find existing request: %w", err)
 				outCh <- out
 				return
 			}
 			if found {
-				log.Printf("account %s (%s): resuming existing report %s", a.SellingPartnerID, a.Region, existingReportID)
+				log.Printf("account %s (%s): resuming existing listings report %s", a.SellingPartnerID, a.Region, existingReportID)
 				outCh <- out
 				return
 			}
 
-			logID, err := o.writer.CreateAccountSyncLog(ctx, syncTypeSpOrders, a.ID)
+			logID, err := o.writer.CreateAccountSyncLog(ctx, syncTypeCatalogItems, a.ID)
 			if err != nil {
 				out.err = fmt.Errorf("create sync log: %w", err)
 				outCh <- out
@@ -135,7 +127,9 @@ func (o *SalesOrchestrator) SyncSales(ctx context.Context, accounts []db.SpAccou
 				return
 			}
 
-			reportID, err := ac.client.RequestReport(ctx, token, ac.region, amazon.SalesReportType, a.Marketplace, startDate, endDate)
+			// No date range sent to Amazon — GET_MERCHANT_LISTINGS_ALL_DATA is a
+			// snapshot report; "" / "" are omitted from the request body.
+			reportID, err := ac.client.RequestReport(ctx, token, ac.region, amazon.MerchantListingsReportType, a.Marketplace, "", "")
 			if err != nil {
 				_ = o.writer.CompleteSyncFailure(ctx, logID, 0, err.Error())
 				out.err = fmt.Errorf("request report: %w", err)
@@ -147,8 +141,8 @@ func (o *SalesOrchestrator) SyncSales(ctx context.Context, accounts []db.SpAccou
 				AmazonSPAccountID: a.ID,
 				Region:            a.Region,
 				ReportID:          reportID,
-				StartDate:         startDate,
-				EndDate:           endDate,
+				StartDate:         today,
+				EndDate:           today,
 			}); err != nil {
 				_ = o.writer.CompleteSyncFailure(ctx, logID, 0, err.Error())
 				out.err = fmt.Errorf("insert report request row: %w", err)
@@ -156,7 +150,7 @@ func (o *SalesOrchestrator) SyncSales(ctx context.Context, accounts []db.SpAccou
 				return
 			}
 
-			log.Printf("account %s (%s): submitted sales report %s", a.SellingPartnerID, a.Region, reportID)
+			log.Printf("account %s (%s): submitted listings report %s", a.SellingPartnerID, a.Region, reportID)
 			outCh <- out
 		}(ac)
 	}
@@ -172,12 +166,12 @@ func (o *SalesOrchestrator) SyncSales(ctx context.Context, accounts []db.SpAccou
 	}
 
 	// ── Phase 2: poll all pending rows from DB until terminal or timeout ──────
-	log.Printf("Phase 2: polling until all sales reports complete or %s elapses", maxWait)
+	log.Printf("Phase 2: polling until all listings reports complete or %s elapses", maxWait)
 	deadline := time.Now().Add(maxWait)
 	return result, o.pollPendingReports(ctx, deadline, result, contexts)
 }
 
-func (o *SalesOrchestrator) pollPendingReports(ctx context.Context, deadline time.Time, result *SalesResult, contexts map[string]*accountContext) error {
+func (o *CatalogOrchestrator) pollPendingReports(ctx context.Context, deadline time.Time, result *CatalogResult, contexts map[string]*accountContext) error {
 	for {
 		pending, err := o.writer.GetPendingReportRequests(ctx)
 		if err != nil {
@@ -194,7 +188,7 @@ func (o *SalesOrchestrator) pollPendingReports(ctx context.Context, deadline tim
 			break
 		}
 
-		log.Printf("Phase 2: %d sales report(s) still pending, checking...", len(pending))
+		log.Printf("Phase 2: %d listings report(s) still pending, checking...", len(pending))
 
 		type pollResult struct {
 			row       db.PendingReportRequest
@@ -273,7 +267,7 @@ func (o *SalesOrchestrator) pollPendingReports(ctx context.Context, deadline tim
 			} else if pr.completed {
 				result.AccountsOK++
 				result.RecordsWritten += pr.written
-				log.Printf("account %s: wrote %d daily sales rows", pr.row.AmazonSPAccountID, pr.written)
+				log.Printf("account %s: wrote %d catalog item rows", pr.row.AmazonSPAccountID, pr.written)
 			}
 		}
 
@@ -290,31 +284,37 @@ func (o *SalesOrchestrator) pollPendingReports(ctx context.Context, deadline tim
 	return nil
 }
 
-// processCompleted downloads and parses the report, then upserts one
-// sp_sales_daily row per date present in the file.
-func (o *SalesOrchestrator) processCompleted(ctx context.Context, ac *accountContext, row db.PendingReportRequest, reportDocumentID string) (int, error) {
+// processCompleted downloads and parses the listings report, upserts one
+// catalog_items row per listing, and propagates product_name into any
+// matching product_economics row (never creating new ones, never touching
+// margin/strategy/targets/launch_until).
+func (o *CatalogOrchestrator) processCompleted(ctx context.Context, ac *accountContext, row db.PendingReportRequest, reportDocumentID string) (int, error) {
 	token, err := ac.tokens.Token(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("get token: %w", err)
 	}
 
-	records, err := ac.client.DownloadReport(ctx, token, ac.region, reportDocumentID)
+	listings, err := ac.client.DownloadMerchantListingsReport(ctx, token, ac.region, reportDocumentID)
 	if err != nil {
-		return 0, fmt.Errorf("download report: %w", err)
+		return 0, fmt.Errorf("download listings report: %w", err)
 	}
 
 	written := 0
-	for _, rec := range records {
-		if err := o.writer.UpsertSalesDaily(ctx, db.SalesDailyUpsert{
-			AmazonSPAccountID: row.AmazonSPAccountID,
-			Date:              rec.Date,
-			TotalSales:        rec.TotalSales,
-			UnitsOrdered:      rec.UnitsOrdered,
-			Orders:            rec.Orders,
+	for _, l := range listings {
+		if err := o.writer.UpsertCatalogItem(ctx, db.CatalogItemUpsert{
+			AmazonSPAccountID: ac.account.ID,
+			ASIN:              l.ASIN,
+			SellerSKU:         l.SellerSKU,
+			ProductName:       l.ProductName,
+			Status:            l.Status,
 		}); err != nil {
-			return written, fmt.Errorf("upsert sales daily: %w", err)
+			return written, fmt.Errorf("upsert catalog item: %w", err)
 		}
 		written++
+
+		if err := o.writer.PropagateProductName(ctx, ac.account.ClientID, l.ASIN, l.ProductName); err != nil {
+			return written, fmt.Errorf("propagate product name: %w", err)
+		}
 	}
 
 	return written, nil

@@ -5,6 +5,7 @@ import {
   createProductEconomics,
   deleteProductEconomics,
   updateProductEconomics,
+  type ProductEconomicsInput,
   type ProductEconomicsRow,
   type PpcStrategy,
 } from "../../_lib/ppc-config-api";
@@ -40,7 +41,7 @@ interface RowProps {
 function ProductRow({ product, onSaved, onDeleted }: RowProps) {
   const [saving, setSaving] = useState(false);
 
-  async function commit(patch: Partial<Omit<ProductEconomicsRow, "id" | "asin">>) {
+  async function commit(patch: Partial<Omit<ProductEconomicsInput, "asin">>) {
     setSaving(true);
     try {
       const updated = await updateProductEconomics(product.id, patch);
@@ -64,20 +65,21 @@ function ProductRow({ product, onSaved, onDeleted }: RowProps) {
   }
 
   const configured = isConfigured(product);
+  const { value: resolvedAcos, isFallback: acosIsFallback } = product.resolvedTargetAcos;
 
   return (
     <div
-      className={`grid grid-cols-[110px_1.4fr_70px_60px_110px_90px_90px_120px_32px] items-center gap-2 border-b border-neutral-100 px-3 py-2 text-[12px] ${
+      className={`grid grid-cols-[110px_1.2fr_70px_60px_110px_90px_90px_110px_120px_32px] items-center gap-2 border-b border-neutral-100 px-3 py-2 text-[12px] ${
         configured ? "" : "bg-amber-50/50"
       } ${saving ? "opacity-60" : ""}`}
     >
       <span className="truncate font-mono text-[11px] text-neutral-500">{product.asin}</span>
-      <input
-        defaultValue={product.productName ?? ""}
-        onBlur={(e) => commit({ productName: e.target.value || null })}
-        placeholder="Product name"
-        className="w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 outline-none hover:border-neutral-200 focus:border-ink focus:bg-white"
-      />
+      <span
+        className={`truncate ${product.productName ? "text-ink" : "text-neutral-300"}`}
+        title="Populated by the SP-API listings sync — not editable here"
+      >
+        {product.productName ?? "not yet synced"}
+      </span>
       <input
         type="number"
         step="0.1"
@@ -132,6 +134,16 @@ function ProductRow({ product, onSaved, onDeleted }: RowProps) {
         placeholder="—"
         className="w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 text-right outline-none hover:border-neutral-200 focus:border-ink focus:bg-white"
       />
+      <span
+        className={`text-right font-mono text-[11.5px] ${acosIsFallback ? "italic text-amber-700" : "text-ink"}`}
+        title={
+          acosIsFallback
+            ? "Falling back to the account default — this product has no target ACOS of its own"
+            : "This product's own target ACOS"
+        }
+      >
+        {resolvedAcos !== null ? `${resolvedAcos}%${acosIsFallback ? " (default)" : ""}` : "—"}
+      </span>
       <input
         type="date"
         defaultValue={product.launchUntil ?? ""}
@@ -190,12 +202,12 @@ export function ProductEconomicsTable({
     onChange(products.filter((p) => p.id !== id));
   }
 
-  const cols = "110px 1.4fr 70px 60px 110px 90px 90px 120px 32px";
+  const cols = "110px 1.2fr 70px 60px 110px 90px 90px 110px 120px 32px";
 
   return (
     <div className="space-y-2">
       <div className="overflow-x-auto rounded-lg border border-neutral-200">
-        <div className="min-w-[760px]">
+        <div className="min-w-[860px]">
           <div
             className="grid items-center gap-2 border-b border-neutral-200 bg-neutral-100 px-3 py-2 text-[10.5px] font-semibold uppercase tracking-wide text-neutral-500"
             style={{ gridTemplateColumns: cols }}
@@ -207,13 +219,15 @@ export function ProductEconomicsTable({
             <span>Strategy</span>
             <span className="text-right">Target ACOS</span>
             <span className="text-right">Target TACOS</span>
+            <span className="text-right">Resolved Target</span>
             <span>Launch until</span>
             <span />
           </div>
 
           {products.length === 0 && (
             <div className="px-3 py-6 text-center text-[12px] text-neutral-400">
-              No products yet — add an ASIN below to get started.
+              No products yet — add an ASIN below to get started. Product names sync automatically once SP-API
+              listings are pulled.
             </div>
           )}
 

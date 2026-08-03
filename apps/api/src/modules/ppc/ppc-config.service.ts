@@ -5,6 +5,7 @@ import { RedisService } from '../../db/redis.service';
 import { clients, ppcClientConfigs, productEconomics } from '../../db/schema';
 import { computePpcConfigCompleteness } from './ppc-completeness';
 import { invalidatePpcClientsCache } from './ppc-cache';
+import { resolveTarget, type ResolvedTarget } from './ppc-resolved-target';
 import { UpdatePpcConfigDto } from './dto/update-ppc-config.dto';
 
 // ── Response shapes ──────────────────────────────────────────────────────────
@@ -47,13 +48,21 @@ export interface ProductEconomicsResponse {
   targetAcos: number | null;
   targetTacos: number | null;
   launchUntil: string | null;
+  // Effective value bid math would use, plus whether it came from the
+  // account default — see ppc-resolved-target.ts. No account-level TACOS
+  // default exists in this schema, so resolvedTargetTacos.isFallback is
+  // always false (it's just the product's own value, or null).
+  resolvedTargetAcos: ResolvedTarget;
+  resolvedTargetTacos: ResolvedTarget;
 }
 
 function num(v: string | null): number | null {
   return v === null ? null : parseFloat(v);
 }
 
-function mapProduct(row: typeof productEconomics.$inferSelect): ProductEconomicsResponse {
+type RawProduct = Omit<ProductEconomicsResponse, 'resolvedTargetAcos' | 'resolvedTargetTacos'>;
+
+function mapProduct(row: typeof productEconomics.$inferSelect): RawProduct {
   return {
     id: row.id,
     asin: row.asin,
@@ -149,6 +158,9 @@ export class PpcConfigService {
     const targetAcosDefault = config ? num(config.targetAcosDefault) : null;
     const accountTargetMetricValue = config ? num(config.accountTargetMetricValue) : null;
 
+    // Completeness reads each product's OWN target, never the resolved
+    // (fallback-inflated) value — a row leaning entirely on the account
+    // default is still a row the team hasn't actually configured.
     const completeness = computePpcConfigCompleteness({
       monthlyAdBudget: config ? num(config.monthlyAdBudget) : null,
       targetAcosDefault,
@@ -160,6 +172,15 @@ export class PpcConfigService {
         launchUntil: p.launchUntil,
       })),
     });
+
+    const resolvedProducts: ProductEconomicsResponse[] = mappedProducts.map((p) => ({
+      ...p,
+      resolvedTargetAcos: resolveTarget(p.targetAcos, targetAcosDefault),
+      // No account-level TACOS default exists in this schema (see
+      // ppc_client_configs comment in schema.ts) — passing null means this
+      // always resolves to the product's own value, isFallback: false.
+      resolvedTargetTacos: resolveTarget(p.targetTacos, null),
+    }));
 
     return {
       clientId,
@@ -185,7 +206,7 @@ export class PpcConfigService {
       thresholdOverrides: (config?.thresholdOverrides as Record<string, number> | undefined) ?? {},
       standingDirectives: config?.standingDirectives ?? null,
       conservativeMode: config?.conservativeMode ?? false,
-      products: mappedProducts,
+      products: resolvedProducts,
       completeness,
     };
   }

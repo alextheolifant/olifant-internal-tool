@@ -36,6 +36,7 @@ export const syncTypeEnum = pgEnum('sync_type', [
   'sp_inventory',
   'ads_profiles',
   'anomaly_detection',
+  'catalog_items',
 ]);
 
 export const syncStatusEnum = pgEnum('sync_status', [
@@ -407,6 +408,7 @@ export const amazonSpAccountsRelations = relations(
       references: [clients.id],
     }),
     syncLogs: many(syncLogs),
+    catalogItems: many(catalogItems),
   }),
 );
 
@@ -517,6 +519,60 @@ export const spInventory = pgTable(
     index('idx_sp_inventory_account').on(t.amazonSpAccountId),
   ],
 );
+
+// Raw ingestion from the GET_MERCHANT_LISTINGS_ALL_DATA report (SP-API
+// Reports) — mirrors sp_inventory's role: written only by the Go sync
+// (services/sync-sp-api), never via the NestJS API. Chosen over the Catalog
+// Items API because Catalog Items' searchCatalogItems searches Amazon's
+// whole public catalog rather than filtering by seller, so it can't discover
+// which ASINs this seller actually has; the listings report is inherently
+// seller-scoped and works for FBM sellers too (FBA inventory would not).
+// Requires the "Inventory and Order Tracking" role, which Olifant's app
+// already holds — verified against Amazon's role-mapping docs before
+// building this, since the app does NOT hold "Product Listing" (required by
+// the Catalog Items API, which is why that path wasn't used).
+//
+// The sync also propagates product_name into product_economics for matching
+// (client, asin) rows — see ProductEconomicsService — but never touches
+// product_economics' team-entered fields (margin/strategy/targets/
+// launch_until). ASIN entry into product_economics itself stays manual;
+// catalog_items independently holds every ASIN the report returns.
+//
+// TODO(unverified): this report hasn't been run against a real account yet
+// (no SP-API account is connected in this environment) — the exact column
+// names/flat-file format below are assumed from Amazon's documented shape,
+// not confirmed against a real downloaded report.
+export const catalogItems = pgTable(
+  'catalog_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    amazonSpAccountId: uuid('amazon_sp_account_id')
+      .notNull()
+      .references(() => amazonSpAccounts.id, { onDelete: 'cascade' }),
+    asin: varchar('asin', { length: 20 }).notNull(),
+    sellerSku: varchar('seller_sku', { length: 255 }),
+    productName: varchar('product_name', { length: 500 }),
+    status: varchar('status', { length: 50 }),
+    lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('uq_catalog_items_account_asin').on(t.amazonSpAccountId, t.asin),
+    index('idx_catalog_items_account').on(t.amazonSpAccountId),
+  ],
+);
+
+export const catalogItemsRelations = relations(catalogItems, ({ one }) => ({
+  amazonSpAccount: one(amazonSpAccounts, {
+    fields: [catalogItems.amazonSpAccountId],
+    references: [amazonSpAccounts.id],
+  }),
+}));
 
 export const anomalies = pgTable(
   'anomalies',
