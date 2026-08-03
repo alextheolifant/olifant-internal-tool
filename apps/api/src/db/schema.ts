@@ -36,6 +36,7 @@ export const syncTypeEnum = pgEnum('sync_type', [
   'sp_inventory',
   'ads_profiles',
   'anomaly_detection',
+  'catalog_items',
 ]);
 
 export const syncStatusEnum = pgEnum('sync_status', [
@@ -407,6 +408,7 @@ export const amazonSpAccountsRelations = relations(
       references: [clients.id],
     }),
     syncLogs: many(syncLogs),
+    catalogItems: many(catalogItems),
   }),
 );
 
@@ -517,6 +519,47 @@ export const spInventory = pgTable(
     index('idx_sp_inventory_account').on(t.amazonSpAccountId),
   ],
 );
+
+// Raw ingestion from SP-API Catalog Items (2022-04-01) — mirrors sp_inventory's
+// role: written only by the Go sync (services/sync-sp-api), never via the
+// NestJS API. The sync also propagates product_name into product_economics
+// for matching (client, asin) rows — see ProductEconomicsService — but never
+// touches product_economics' team-entered fields (margin/strategy/targets/
+// launch_until).
+//
+// TODO(unverified): this endpoint hasn't been called against a real account
+// yet (no SP-API account is connected in this environment) — status's real
+// field path/values are assumed from the task spec, not confirmed.
+export const catalogItems = pgTable(
+  'catalog_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    amazonSpAccountId: uuid('amazon_sp_account_id')
+      .notNull()
+      .references(() => amazonSpAccounts.id, { onDelete: 'cascade' }),
+    asin: varchar('asin', { length: 20 }).notNull(),
+    productName: varchar('product_name', { length: 500 }),
+    status: varchar('status', { length: 50 }),
+    lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('uq_catalog_items_account_asin').on(t.amazonSpAccountId, t.asin),
+    index('idx_catalog_items_account').on(t.amazonSpAccountId),
+  ],
+);
+
+export const catalogItemsRelations = relations(catalogItems, ({ one }) => ({
+  amazonSpAccount: one(amazonSpAccounts, {
+    fields: [catalogItems.amazonSpAccountId],
+    references: [amazonSpAccounts.id],
+  }),
+}));
 
 export const anomalies = pgTable(
   'anomalies',
