@@ -63,6 +63,73 @@ source /opt/olifant/load-env.sh && docker compose -f docker-compose.prod.yml up 
 
 ---
 
+## Go Sync Services (sp-api / ads-api)
+
+These are **not** part of `docker-compose.prod.yml` — each sync is a one-off binary, built into its own image and run with `docker run --rm`, not a long-running compose service (only `worker` runs continuously, as each image's default `ENTRYPOINT`).
+
+**Rebuild the image** after any change under `services/sync-sp-api/` or `services/sync-ads-api/`:
+
+```bash
+cd /opt/olifant/olifant-internal-tool
+git pull origin main
+
+docker build --no-cache -t olifant-sync-sp-api -f services/sync-sp-api/Dockerfile services/sync-sp-api
+# and/or
+docker build --no-cache -t olifant-sync-ads-api -f services/sync-ads-api/Dockerfile services/sync-ads-api
+```
+
+**Run a sync** — override `ENTRYPOINT` to pick the binary, pass secrets through from the environment (`source /opt/olifant/load-env.sh` first):
+
+```bash
+# sp-api: sales + traffic (date range, defaults to last 30 days)
+docker run --rm \
+  -e DATABASE_URL -e SP_API_CLIENT_ID -e SP_API_CLIENT_SECRET -e SP_TOKEN_ENCRYPTION_KEY \
+  --entrypoint /sync-sales \
+  olifant-sync-sp-api \
+  -start 2026-07-26 -end 2026-07-29
+
+# sp-api: inventory
+docker run --rm \
+  -e DATABASE_URL -e SP_API_CLIENT_ID -e SP_API_CLIENT_SECRET -e SP_TOKEN_ENCRYPTION_KEY \
+  --entrypoint /sync-inventory \
+  olifant-sync-sp-api
+
+# sp-api: catalog / merchant listings (ASIN discovery + product_economics name enrichment, no date range)
+docker run --rm \
+  -e DATABASE_URL -e SP_API_CLIENT_ID -e SP_API_CLIENT_SECRET -e SP_TOKEN_ENCRYPTION_KEY \
+  --entrypoint /sync-catalog \
+  olifant-sync-sp-api
+
+# ads-api: profiles
+docker run --rm \
+  -e DATABASE_URL -e ADS_CLIENT_ID -e ADS_CLIENT_SECRET -e SP_TOKEN_ENCRYPTION_KEY \
+  --entrypoint /sync-profiles \
+  olifant-sync-ads-api
+
+# ads-api: campaigns
+docker run --rm \
+  -e DATABASE_URL -e ADS_CLIENT_ID -e ADS_CLIENT_SECRET -e SP_TOKEN_ENCRYPTION_KEY \
+  --entrypoint /sync-campaigns \
+  olifant-sync-ads-api
+
+# ads-api: metrics (date range, defaults to last 30 days; also needs ClickHouse)
+docker run --rm \
+  -e DATABASE_URL -e ADS_CLIENT_ID -e ADS_CLIENT_SECRET -e SP_TOKEN_ENCRYPTION_KEY -e CLICKHOUSE_URL \
+  --entrypoint /sync-metrics \
+  olifant-sync-ads-api \
+  -start 2026-07-26 -end 2026-07-29
+
+# ads-api: retry failed report requests (also needs ClickHouse)
+docker run --rm \
+  -e DATABASE_URL -e ADS_CLIENT_ID -e ADS_CLIENT_SECRET -e SP_TOKEN_ENCRYPTION_KEY -e CLICKHOUSE_URL \
+  --entrypoint /retry-reports \
+  olifant-sync-ads-api
+```
+
+Each binary uses `sp_report_requests`/dedup logic internally, so re-running the same range is safe. `sync-sales` and `sync-metrics` are the only two that take `-start`/`-end`; everything else has no flags.
+
+---
+
 ## Database Migrations
 
 Always run migrations **before** deploying new API code that depends on the new schema.

@@ -538,10 +538,10 @@ export const spInventory = pgTable(
 // launch_until). ASIN entry into product_economics itself stays manual;
 // catalog_items independently holds every ASIN the report returns.
 //
-// TODO(unverified): this report hasn't been run against a real account yet
-// (no SP-API account is connected in this environment) — the exact column
-// names/flat-file format below are assumed from Amazon's documented shape,
-// not confirmed against a real downloaded report.
+// Confirmed against 2 real accounts on 2026-08-03 — see
+// services/sync-sp-api/internal/amazon/listings.go for the flat-file parser
+// and the one fix that came out of that run (a leading UTF-8 BOM silently
+// blanked product_name until it was stripped).
 export const catalogItems = pgTable(
   'catalog_items',
   {

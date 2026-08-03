@@ -23,21 +23,21 @@ type MerchantListing struct {
 	Status      string
 }
 
-// TODO(unverified): this report hasn't been downloaded from a real account
-// yet. Column names below are Amazon's documented flat-file header names for
-// this report, not confirmed against a live file — GET_SALES_AND_TRAFFIC_REPORT
-// was wrongly assumed to be this same tab-separated shape before (it's
-// actually JSON), so don't trust this without checking a real file first.
-// Each field tries its primary column name, then a fallback, so minor
-// column-set differences between marketplaces/accounts don't break parsing
-// outright — but a genuinely different shape (e.g. this report also turning
-// out to be JSON) would still need this rewritten, not just re-mapped.
+// Confirmed against real accounts on 2026-08-03: tab-separated, asin1/
+// seller-sku/status all matched on the first production run. item-name did
+// not — Amazon prefixes this report with a UTF-8 BOM, which attaches to
+// whichever column is physically first in the header row (item-name here),
+// so it silently failed the exact-string match while every other column
+// (unaffected by the BOM) matched fine. Stripped below.
 var (
 	asinColumns     = []string{"asin1", "asin"}
 	skuColumns      = []string{"seller-sku", "sku"}
 	productNameCols = []string{"item-name"}
 	statusColumns   = []string{"status"}
 )
+
+// utf8BOM is the byte sequence Amazon prefixes this report with.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
 // DownloadMerchantListingsReport downloads and parses a
 // GET_MERCHANT_LISTINGS_ALL_DATA document via the shared
@@ -54,7 +54,7 @@ func (c *Client) DownloadMerchantListingsReport(ctx context.Context, accessToken
 // GET_MERCHANT_LISTINGS_ALL_DATA: a header row naming each column, then one
 // row per listing. Columns are resolved by header name, not fixed position.
 func parseMerchantListingsReport(raw []byte) ([]MerchantListing, error) {
-	trimmed := bytes.TrimSpace(raw)
+	trimmed := bytes.TrimSpace(bytes.TrimPrefix(raw, utf8BOM))
 	if len(trimmed) == 0 {
 		return nil, nil
 	}

@@ -77,6 +77,28 @@ func TestParseMerchantListingsReport_EmptyInput(t *testing.T) {
 	}
 }
 
+func TestParseMerchantListingsReport_StripsLeadingBOM(t *testing.T) {
+	// Real Amazon output prefixes the report with a UTF-8 BOM, which attaches
+	// to item-name since it's the first header column — this must not break
+	// resolving it, the way it did in production before this was found.
+	raw := append([]byte{0xEF, 0xBB, 0xBF}, []byte("item-name\tasin1\n"+
+		"BOM Product\tB0BOMTEST\n")...)
+
+	listings, err := parseMerchantListingsReport(raw)
+	if err != nil {
+		t.Fatalf("parseMerchantListingsReport() error: %v", err)
+	}
+	if len(listings) != 1 {
+		t.Fatalf("got %d listings, want 1", len(listings))
+	}
+	if listings[0].ProductName != "BOM Product" {
+		t.Errorf("ProductName = %q, want %q", listings[0].ProductName, "BOM Product")
+	}
+	if listings[0].ASIN != "B0BOMTEST" {
+		t.Errorf("ASIN = %q, want B0BOMTEST", listings[0].ASIN)
+	}
+}
+
 func TestParseMerchantListingsReport_MissingASINColumn(t *testing.T) {
 	raw := []byte("item-name\tprice\nSome Product\t9.99\n")
 	_, err := parseMerchantListingsReport(raw)
