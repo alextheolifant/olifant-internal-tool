@@ -1,0 +1,2 @@
+CREATE TYPE "public"."ppc_account_target_metric" AS ENUM('acos', 'tacos');--> statement-breakpoint
+ALTER TABLE "ppc_client_configs" ADD COLUMN "account_target_metric" "ppc_account_target_metric" DEFAULT 'tacos' NOT NULL;

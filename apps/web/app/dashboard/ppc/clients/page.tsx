@@ -1,5 +1,5 @@
-import { PlaceholderPage } from "../../_components/PlaceholderPage";
+import { PpcClientsView } from "../_components/clients/PpcClientsView";
 
 export default function PpcClientsPage() {
-  return <PlaceholderPage label="Clients" />;
+  return <PpcClientsView />;
 }

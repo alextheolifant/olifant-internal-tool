@@ -1,5 +1,5 @@
-import { PlaceholderPage } from "../../_components/PlaceholderPage";
+import { PpcConfigView } from "../_components/config/PpcConfigView";
 
 export default function PpcConfigPage() {
-  return <PlaceholderPage label="Config" />;
+  return <PpcConfigView />;
 }
