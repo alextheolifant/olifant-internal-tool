@@ -1,3 +1,5 @@
+import { strategyTokens } from "../../../_lib/theme";
+
 interface StrategyDef {
   tag: string;
   tagClass: string;
@@ -9,7 +11,7 @@ interface StrategyDef {
 const STRATEGIES: StrategyDef[] = [
   {
     tag: "LAUNCH",
-    tagClass: "bg-amber-100 text-amber-800",
+    tagClass: `${strategyTokens.launch.bg} ${strategyTokens.launch.text}`,
     title: "Buy rank, time-boxed",
     body:
       "For new products or relaunches. The goal is velocity and visibility, not efficiency — so the engine deliberately tolerates spend that other strategies would flag. Always has an end date; when it expires the product auto-flips to growth, the change is logged in the ledger, and a notification task is created.",
@@ -27,7 +29,7 @@ const STRATEGIES: StrategyDef[] = [
   },
   {
     tag: "GROWTH",
-    tagClass: "bg-blue-50 text-blue-700",
+    tagClass: `${strategyTokens.growth.bg} ${strategyTokens.growth.text}`,
     title: "Scale what works",
     body:
       "For products with proven conversion that can absorb more spend at acceptable efficiency. The engine hunts headroom: capped budgets, share gaps, harvest candidates, underinvested placements.",
@@ -45,7 +47,7 @@ const STRATEGIES: StrategyDef[] = [
   },
   {
     tag: "MAINTAIN",
-    tagClass: "bg-green-50 text-green-700",
+    tagClass: `${strategyTokens.maintain.bg} ${strategyTokens.maintain.text}`,
     title: "Hold efficiency (ACOS or TACOS)",
     body:
       "For mature products where the job is defending profit and rank at minimum spend. The engine is strict: waste is cut fastest here, and spend increases need to earn their way in.",

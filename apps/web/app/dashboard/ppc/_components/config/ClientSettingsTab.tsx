@@ -9,6 +9,7 @@ import {
   type SbObjective,
 } from "../../_lib/ppc-config-api";
 import { CfgRow } from "./CfgRow";
+import { CompletenessMeter } from "./CompletenessMeter";
 import { HarvestDestinationsInput } from "./HarvestDestinationsInput";
 import { ProductEconomicsTable } from "./ProductEconomicsTable";
 import { SbObjectivesInput } from "./SbObjectivesInput";
@@ -27,12 +28,6 @@ function ToggleField({ checked, onChange }: { checked: boolean; onChange: (v: bo
       <span className="text-[12.5px] text-neutral-500">{checked ? "on" : "off"}</span>
     </button>
   );
-}
-
-function barColor(percent: number): string {
-  if (percent >= 100) return "bg-green-400";
-  if (percent >= 50) return "bg-amber-600";
-  return "bg-red-600";
 }
 
 export function ClientSettingsTab({ clientId }: { clientId: string }) {
@@ -144,13 +139,8 @@ export function ClientSettingsTab({ clientId }: { clientId: string }) {
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-surface p-4">
-      <div className="mb-3.5 flex items-center gap-3.5">
-        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-150">
-          <div className={`h-1.5 rounded-full transition-all ${barColor(percent)}`} style={{ width: `${percent}%` }} />
-        </div>
-        <span className="shrink-0 font-mono text-[11px] text-neutral-500">
-          {metCount}/{checklist.length} complete
-        </span>
+      <div className="mb-3.5">
+        <CompletenessMeter percent={percent} metCount={metCount} total={checklist.length} />
       </div>
       {percent < 100 && (
         <ul className="mb-3.5 space-y-0.5">
@@ -276,16 +266,17 @@ export function ClientSettingsTab({ clientId }: { clientId: string }) {
         <ToggleField checked={conservativeMode} onChange={setConservativeMode} />
       </CfgRow>
 
-      <CfgRow label="Product economics" hint="Roster starts from ASINs added manually — Catalog Items auto-population is a later phase.">
+      <div className="border-b border-neutral-100 py-3">
         <ProductEconomicsTable
           clientId={clientId}
           products={config.products}
+          completeness={config.completeness}
           onChange={(products) => {
             setConfig({ ...config, products });
             refreshCompleteness();
           }}
         />
-      </CfgRow>
+      </div>
 
       <CfgRow label="Brand terms">
         <TagInput values={brandTerms} onChange={setBrandTerms} placeholder="e.g. coat defense" />

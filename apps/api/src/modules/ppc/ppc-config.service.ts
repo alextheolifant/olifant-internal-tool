@@ -85,7 +85,10 @@ export class PpcConfigService {
   async getConfig(clientId: string): Promise<PpcConfigResponse> {
     const client = await this.drizzle.db.query.clients.findFirst({
       where: eq(clients.id, clientId),
-      with: { amazonAdsAccounts: true },
+      with: {
+        amazonAdsAccounts: true,
+        amazonSpAccounts: { with: { catalogItems: true } },
+      },
     });
     if (!client) throw new NotFoundException(`Client ${clientId} not found`);
 
@@ -150,11 +153,26 @@ export class PpcConfigService {
     clientId: string,
     client: {
       amazonAdsAccounts: { profileId: string; accountName: string | null; marketplace: string | null }[];
+      amazonSpAccounts: { catalogItems: { asin: string; status: string | null }[] }[];
     },
     config: typeof ppcClientConfigs.$inferSelect | undefined,
     products: (typeof productEconomics.$inferSelect)[],
   ): PpcConfigResponse {
-    const mappedProducts = products.map(mapProduct);
+    // An ASIN with no catalog_items row at all hasn't been through a listings
+    // sync yet (or never will be, for a manually-tracked product) — treat it
+    // as active rather than hiding it. Only an ASIN the sync has actually seen
+    // and marked inactive everywhere gets excluded.
+    const knownAsins = new Set<string>();
+    const activeAsins = new Set<string>();
+    for (const spAccount of client.amazonSpAccounts) {
+      for (const item of spAccount.catalogItems) {
+        knownAsins.add(item.asin);
+        if (item.status?.toLowerCase() === 'active') activeAsins.add(item.asin);
+      }
+    }
+    const isActiveProduct = (asin: string) => !knownAsins.has(asin) || activeAsins.has(asin);
+
+    const mappedProducts = products.map(mapProduct).filter((p) => isActiveProduct(p.asin));
     const targetAcosDefault = config ? num(config.targetAcosDefault) : null;
     const accountTargetMetricValue = config ? num(config.accountTargetMetricValue) : null;
 

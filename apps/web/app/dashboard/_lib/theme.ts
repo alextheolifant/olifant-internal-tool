@@ -62,6 +62,16 @@ export const statusTokens: Record<
   Churned:    { bg: "bg-red-50",     text: "text-red-600",   dot: "bg-red-600",    label: "Churned" },
 };
 
+// ── PPC strategy badges ───────────────────────────────────────────────────────
+export const strategyTokens: Record<
+  "launch" | "growth" | "maintain",
+  { bg: string; text: string; label: string }
+> = {
+  launch:   { bg: "bg-amber-100", text: "text-amber-800", label: "Launch" },
+  growth:   { bg: "bg-blue-50",   text: "text-blue-700",  label: "Growth" },
+  maintain: { bg: "bg-green-50",  text: "text-green-700", label: "Maintain" },
+};
+
 // ── Table chrome ──────────────────────────────────────────────────────────────
 export const tableTokens = {
   headerBg:     "bg-neutral-100 border-b border-neutral-200",
