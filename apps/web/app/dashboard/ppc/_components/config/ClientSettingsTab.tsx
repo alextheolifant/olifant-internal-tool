@@ -268,7 +268,6 @@ export function ClientSettingsTab({ clientId }: { clientId: string }) {
 
       <div className="border-b border-neutral-100 py-3">
         <ProductEconomicsTable
-          clientId={clientId}
           products={config.products}
           completeness={config.completeness}
           onChange={(products) => {

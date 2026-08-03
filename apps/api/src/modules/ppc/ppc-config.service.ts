@@ -160,17 +160,21 @@ export class PpcConfigService {
   ): PpcConfigResponse {
     // An ASIN with no catalog_items row at all hasn't been through a listings
     // sync yet (or never will be, for a manually-tracked product) — treat it
-    // as active rather than hiding it. Only an ASIN the sync has actually seen
-    // and marked inactive everywhere gets excluded.
-    const knownAsins = new Set<string>();
+    // as active rather than hiding it. Only an ASIN the sync has explicitly
+    // marked inactive (in every marketplace it appears in) gets excluded — a
+    // NULL/unrecognized status (e.g. a report-parsing gap that missed the
+    // status column) must default to visible, not hidden, since "unknown" is
+    // not the same claim as "confirmed inactive".
     const activeAsins = new Set<string>();
+    const inactiveAsins = new Set<string>();
     for (const spAccount of client.amazonSpAccounts) {
       for (const item of spAccount.catalogItems) {
-        knownAsins.add(item.asin);
-        if (item.status?.toLowerCase() === 'active') activeAsins.add(item.asin);
+        const status = item.status?.toLowerCase();
+        if (status === 'active') activeAsins.add(item.asin);
+        else if (status === 'inactive') inactiveAsins.add(item.asin);
       }
     }
-    const isActiveProduct = (asin: string) => !knownAsins.has(asin) || activeAsins.has(asin);
+    const isActiveProduct = (asin: string) => activeAsins.has(asin) || !inactiveAsins.has(asin);
 
     const mappedProducts = products.map(mapProduct).filter((p) => isActiveProduct(p.asin));
     const targetAcosDefault = config ? num(config.targetAcosDefault) : null;

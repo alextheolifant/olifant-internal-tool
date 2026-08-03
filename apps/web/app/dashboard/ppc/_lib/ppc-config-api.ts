@@ -106,17 +106,6 @@ export async function updatePpcConfig(
   return json(res);
 }
 
-export async function createProductEconomics(
-  clientId: string,
-  input: ProductEconomicsInput,
-): Promise<ProductEconomicsRow> {
-  const res = await apiFetch(`/api/ppc/config/${clientId}/products`, {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-  return json(res);
-}
-
 export async function updateProductEconomics(
   id: string,
   patch: Partial<Omit<ProductEconomicsInput, "asin">>,

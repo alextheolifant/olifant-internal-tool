@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { healthTokens, strategyTokens } from "../../../_lib/theme";
 import {
-  createProductEconomics,
   deleteProductEconomics,
   updateProductEconomics,
   type ProductEconomicsInput,
@@ -202,36 +201,14 @@ function ProductRow({ product, onSaved, onDeleted }: RowProps) {
 }
 
 export function ProductEconomicsTable({
-  clientId,
   products,
   completeness,
   onChange,
 }: {
-  clientId: string;
   products: ProductEconomicsRow[];
   completeness: { percent: number; checklist: { key: string; label: string; met: boolean }[] };
   onChange: (products: ProductEconomicsRow[]) => void;
 }) {
-  const [newAsin, setNewAsin] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
-
-  async function addRow() {
-    const asin = newAsin.trim();
-    if (!asin) return;
-    setAdding(true);
-    setAddError(null);
-    try {
-      const created = await createProductEconomics(clientId, { asin });
-      onChange([...products, created]);
-      setNewAsin("");
-    } catch (err) {
-      setAddError(err instanceof Error ? err.message : "Failed to add ASIN");
-    } finally {
-      setAdding(false);
-    }
-  }
-
   function updateRow(updated: ProductEconomicsRow) {
     onChange(products.map((p) => (p.id === updated.id ? updated : p)));
   }
@@ -279,34 +256,13 @@ export function ProductEconomicsTable({
 
           {products.length === 0 && (
             <div className="px-3 py-6 text-center text-[12px] text-neutral-400">
-              No active products yet — add an ASIN below to get started. Product names sync automatically once
-              SP-API listings are pulled.
+              No active products yet. Product names sync automatically once SP-API listings are pulled.
             </div>
           )}
 
           {products.map((p) => (
             <ProductRow key={p.id} product={p} onSaved={updateRow} onDeleted={removeRow} />
           ))}
-
-          <div className="flex items-center gap-2 px-3 py-2.5">
-            <input
-              value={newAsin}
-              onChange={(e) => setNewAsin(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addRow()}
-              placeholder="Add ASIN…"
-              disabled={adding}
-              className="w-40 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-[12px] outline-none focus:border-ink focus:ring-2 focus:ring-ink/10"
-            />
-            <button
-              type="button"
-              onClick={addRow}
-              disabled={adding || !newAsin.trim()}
-              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-[12px] font-semibold text-neutral-600 hover:bg-neutral-50 disabled:opacity-50"
-            >
-              {adding ? "Adding…" : "Add"}
-            </button>
-            {addError && <span className="text-[11.5px] text-red-600">{addError}</span>}
-          </div>
         </div>
       </div>
 
