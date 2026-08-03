@@ -2,25 +2,32 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { and, eq } from 'drizzle-orm';
 import { DrizzleService } from '../../db/drizzle.service';
 import { RedisService } from '../../db/redis.service';
-import { clients, productEconomics } from '../../db/schema';
+import { clients, ppcClientConfigs, productEconomics } from '../../db/schema';
 import { invalidatePpcClientsCache } from './ppc-cache';
 import type { ProductEconomicsResponse } from './ppc-config.service';
+import { resolveTarget } from './ppc-resolved-target';
 import { CreateProductEconomicsDto, UpdateProductEconomicsDto } from './dto/product-economics.dto';
 
 function num(v: string | null): number | null {
   return v === null ? null : parseFloat(v);
 }
 
-function mapRow(row: typeof productEconomics.$inferSelect): ProductEconomicsResponse {
+function mapRow(row: typeof productEconomics.$inferSelect, targetAcosDefault: number | null): ProductEconomicsResponse {
+  const targetAcos = num(row.targetAcos);
+  const targetTacos = num(row.targetTacos);
   return {
     id: row.id,
     asin: row.asin,
     productName: row.productName,
     margin: num(row.margin),
     strategy: row.strategy,
-    targetAcos: num(row.targetAcos),
-    targetTacos: num(row.targetTacos),
+    targetAcos,
+    targetTacos,
     launchUntil: row.launchUntil,
+    resolvedTargetAcos: resolveTarget(targetAcos, targetAcosDefault),
+    // No account-level TACOS default exists in this schema — see
+    // ppc-config.service.ts's identical comment.
+    resolvedTargetTacos: resolveTarget(targetTacos, null),
   };
 }
 
@@ -30,6 +37,13 @@ export class ProductEconomicsService {
     private readonly drizzle: DrizzleService,
     private readonly redis: RedisService,
   ) {}
+
+  private async getTargetAcosDefault(clientId: string): Promise<number | null> {
+    const config = await this.drizzle.db.query.ppcClientConfigs.findFirst({
+      where: eq(ppcClientConfigs.clientId, clientId),
+    });
+    return config ? num(config.targetAcosDefault) : null;
+  }
 
   async create(clientId: string, dto: CreateProductEconomicsDto): Promise<ProductEconomicsResponse> {
     const client = await this.drizzle.db.query.clients.findFirst({
@@ -49,7 +63,6 @@ export class ProductEconomicsService {
       .values({
         clientId,
         asin: dto.asin,
-        productName: dto.productName ?? null,
         margin: dto.margin != null ? String(dto.margin) : null,
         strategy: dto.strategy ?? null,
         targetAcos: dto.targetAcos != null ? String(dto.targetAcos) : null,
@@ -59,12 +72,11 @@ export class ProductEconomicsService {
       .returning();
 
     await invalidatePpcClientsCache(this.redis);
-    return mapRow(row);
+    return mapRow(row, await this.getTargetAcosDefault(clientId));
   }
 
   async update(id: string, dto: UpdateProductEconomicsDto): Promise<ProductEconomicsResponse> {
     const patch: Partial<typeof productEconomics.$inferInsert> = { updatedAt: new Date() };
-    if (dto.productName !== undefined) patch.productName = dto.productName;
     if (dto.margin !== undefined) patch.margin = dto.margin != null ? String(dto.margin) : null;
     if (dto.strategy !== undefined) patch.strategy = dto.strategy;
     if (dto.targetAcos !== undefined)
@@ -81,7 +93,7 @@ export class ProductEconomicsService {
     if (!row) throw new NotFoundException(`Product economics row ${id} not found`);
 
     await invalidatePpcClientsCache(this.redis);
-    return mapRow(row);
+    return mapRow(row, await this.getTargetAcosDefault(row.clientId));
   }
 
   async remove(id: string): Promise<void> {

@@ -3,14 +3,15 @@ import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min, MinLength } 
 const STRATEGIES = ['launch', 'growth', 'maintain'] as const;
 export type PpcStrategy = (typeof STRATEGIES)[number];
 
+// productName is deliberately absent from both DTOs — it's system-owned,
+// populated only by the SP-API listings sync (services/sync-sp-api) writing
+// directly to Postgres, never editable through this API. See
+// ProductEconomicsResponse / catalog_items in schema.ts.
+
 export class CreateProductEconomicsDto {
   @IsString()
   @MinLength(1)
   asin: string;
-
-  @IsOptional()
-  @IsString()
-  productName?: string;
 
   @IsOptional()
   @IsNumber()
@@ -37,10 +38,6 @@ export class CreateProductEconomicsDto {
 }
 
 export class UpdateProductEconomicsDto {
-  @IsOptional()
-  @IsString()
-  productName?: string | null;
-
   @IsOptional()
   @IsNumber()
   @Min(0)

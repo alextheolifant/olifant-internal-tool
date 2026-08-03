@@ -520,16 +520,28 @@ export const spInventory = pgTable(
   ],
 );
 
-// Raw ingestion from SP-API Catalog Items (2022-04-01) — mirrors sp_inventory's
-// role: written only by the Go sync (services/sync-sp-api), never via the
-// NestJS API. The sync also propagates product_name into product_economics
-// for matching (client, asin) rows — see ProductEconomicsService — but never
-// touches product_economics' team-entered fields (margin/strategy/targets/
-// launch_until).
+// Raw ingestion from the GET_MERCHANT_LISTINGS_ALL_DATA report (SP-API
+// Reports) — mirrors sp_inventory's role: written only by the Go sync
+// (services/sync-sp-api), never via the NestJS API. Chosen over the Catalog
+// Items API because Catalog Items' searchCatalogItems searches Amazon's
+// whole public catalog rather than filtering by seller, so it can't discover
+// which ASINs this seller actually has; the listings report is inherently
+// seller-scoped and works for FBM sellers too (FBA inventory would not).
+// Requires the "Inventory and Order Tracking" role, which Olifant's app
+// already holds — verified against Amazon's role-mapping docs before
+// building this, since the app does NOT hold "Product Listing" (required by
+// the Catalog Items API, which is why that path wasn't used).
 //
-// TODO(unverified): this endpoint hasn't been called against a real account
-// yet (no SP-API account is connected in this environment) — status's real
-// field path/values are assumed from the task spec, not confirmed.
+// The sync also propagates product_name into product_economics for matching
+// (client, asin) rows — see ProductEconomicsService — but never touches
+// product_economics' team-entered fields (margin/strategy/targets/
+// launch_until). ASIN entry into product_economics itself stays manual;
+// catalog_items independently holds every ASIN the report returns.
+//
+// TODO(unverified): this report hasn't been run against a real account yet
+// (no SP-API account is connected in this environment) — the exact column
+// names/flat-file format below are assumed from Amazon's documented shape,
+// not confirmed against a real downloaded report.
 export const catalogItems = pgTable(
   'catalog_items',
   {
@@ -538,6 +550,7 @@ export const catalogItems = pgTable(
       .notNull()
       .references(() => amazonSpAccounts.id, { onDelete: 'cascade' }),
     asin: varchar('asin', { length: 20 }).notNull(),
+    sellerSku: varchar('seller_sku', { length: 255 }),
     productName: varchar('product_name', { length: 500 }),
     status: varchar('status', { length: 50 }),
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),

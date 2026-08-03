@@ -14,15 +14,24 @@ export interface HarvestDestination {
   maxTargets: number | null;
 }
 
+export interface ResolvedTarget {
+  value: number | null;
+  isFallback: boolean;
+}
+
 export interface ProductEconomicsRow {
   id: string;
   asin: string;
+  // System-owned — populated only by the SP-API listings sync, never
+  // editable here (see product-economics.dto.ts).
   productName: string | null;
   margin: number | null;
   strategy: PpcStrategy | null;
   targetAcos: number | null;
   targetTacos: number | null;
   launchUntil: string | null;
+  resolvedTargetAcos: ResolvedTarget;
+  resolvedTargetTacos: ResolvedTarget;
 }
 
 export interface PpcAdsAccount {
@@ -69,7 +78,6 @@ export type UpdatePpcConfigInput = Partial<{
 
 export interface ProductEconomicsInput {
   asin: string;
-  productName?: string | null;
   margin?: number | null;
   strategy?: PpcStrategy | null;
   targetAcos?: number | null;

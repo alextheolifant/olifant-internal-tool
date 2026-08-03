@@ -1,12 +1,12 @@
-// Command sync-catalog looks up product name/status via SP-API Catalog Items
-// for every ASIN already entered in product_economics, for every active
-// seller account, and enriches those rows' product_name. It never creates
-// product_economics rows — ASIN entry stays manual/team-driven.
+// Command sync-catalog pulls GET_MERCHANT_LISTINGS_ALL_DATA from SP-API for
+// every active seller account and writes it into catalog_items, then
+// propagates product_name into any matching product_economics row. Same
+// two-phase batch design as sync-sales, persisted via sp_report_requests.
 //
-// TODO(unverified): this endpoint has not been called against a real account
-// yet — no SP-API account is connected in this environment. Field paths and
-// pagination assumptions in internal/amazon/catalog.go are unconfirmed; run
-// this against a real account and correct them before trusting the output.
+// TODO(unverified): this report has not been run against a real account yet
+// — no SP-API account is connected in this environment. The flat-file column
+// names assumed in internal/amazon/listings.go are unconfirmed; run this
+// against a real account and correct them before trusting the output.
 //
 // Usage:
 //
@@ -46,10 +46,13 @@ func main() {
 		requireEnv("SP_API_CLIENT_SECRET"),
 		encryptionKey,
 	)
-	result := orchestrator.SyncCatalog(ctx, accounts)
+	result, err := orchestrator.SyncCatalog(ctx, accounts)
+	if err != nil {
+		log.Fatalf("sync failed: %v", err)
+	}
 
-	log.Printf("sync complete: ok=%d skipped=%d failed=%d records_written=%d",
-		result.AccountsOK, result.AccountsSkipped, result.AccountsFailed, result.RecordsWritten)
+	log.Printf("sync complete: ok=%d failed=%d records_written=%d",
+		result.AccountsOK, result.AccountsFailed, result.RecordsWritten)
 }
 
 func requireEnv(key string) string {

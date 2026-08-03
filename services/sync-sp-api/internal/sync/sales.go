@@ -135,7 +135,7 @@ func (o *SalesOrchestrator) SyncSales(ctx context.Context, accounts []db.SpAccou
 				return
 			}
 
-			reportID, err := ac.client.RequestReport(ctx, token, ac.region, a.Marketplace, startDate, endDate)
+			reportID, err := ac.client.RequestReport(ctx, token, ac.region, amazon.SalesReportType, a.Marketplace, startDate, endDate)
 			if err != nil {
 				_ = o.writer.CompleteSyncFailure(ctx, logID, 0, err.Error())
 				out.err = fmt.Errorf("request report: %w", err)

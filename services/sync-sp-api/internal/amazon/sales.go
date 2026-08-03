@@ -11,13 +11,16 @@ import (
 	"strings"
 )
 
-const salesReportType = "GET_SALES_AND_TRAFFIC_REPORT"
+// SalesReportType is the report type value for the sales/traffic sync.
+const SalesReportType = "GET_SALES_AND_TRAFFIC_REPORT"
 
 // reportRequestBody is the JSON body for POST /reports/2021-06-30/reports.
+// DataStartTime/DataEndTime are omitted entirely for snapshot report types
+// (e.g. GET_MERCHANT_LISTINGS_ALL_DATA) that have no date range.
 type reportRequestBody struct {
 	ReportType     string   `json:"reportType"`
-	DataStartTime  string   `json:"dataStartTime"`
-	DataEndTime    string   `json:"dataEndTime"`
+	DataStartTime  string   `json:"dataStartTime,omitempty"`
+	DataEndTime    string   `json:"dataEndTime,omitempty"`
 	MarketplaceIDs []string `json:"marketplaceIds"`
 }
 
@@ -41,11 +44,13 @@ type reportDocumentResponse struct {
 	CompressionAlgorithm string `json:"compressionAlgorithm"`
 }
 
-// RequestReport submits a GET_SALES_AND_TRAFFIC_REPORT for one account and
-// returns Amazon's reportId.
-func (c *Client) RequestReport(ctx context.Context, accessToken string, region Region, marketplaceID, startDate, endDate string) (string, error) {
+// RequestReport submits any SP-API Reports-API report type for one account
+// and returns Amazon's reportId. startDate/endDate are "" for snapshot report
+// types (e.g. GET_MERCHANT_LISTINGS_ALL_DATA) that have no date range —
+// reportRequestBody omits them from the request body in that case.
+func (c *Client) RequestReport(ctx context.Context, accessToken string, region Region, reportType, marketplaceID, startDate, endDate string) (string, error) {
 	body, err := json.Marshal(reportRequestBody{
-		ReportType:     salesReportType,
+		ReportType:     reportType,
 		DataStartTime:  startDate,
 		DataEndTime:    endDate,
 		MarketplaceIDs: []string{marketplaceID},
@@ -126,12 +131,23 @@ type DailySales struct {
 	Orders       int64
 }
 
-// DownloadReport fetches the report document's signed download URL, then
-// downloads and decompresses (if needed) the underlying file.
-// GET_SALES_AND_TRAFFIC_REPORT is one of the SP-API reports that comes back
-// as JSON (salesAndTrafficByDate[]), not a flat/TSV file like most other
-// report types.
+// DownloadReport downloads and parses a GET_SALES_AND_TRAFFIC_REPORT
+// document. That report comes back as JSON (salesAndTrafficByDate[]), not a
+// flat/TSV file like most other report types — DownloadReportDocument
+// handles the report-type-agnostic fetch/decompress, this just adds the
+// sales-specific parse on top.
 func (c *Client) DownloadReport(ctx context.Context, accessToken string, region Region, reportDocumentID string) ([]DailySales, error) {
+	rawBody, err := c.DownloadReportDocument(ctx, accessToken, region, reportDocumentID)
+	if err != nil {
+		return nil, err
+	}
+	return parseSalesAndTrafficReport(rawBody)
+}
+
+// DownloadReportDocument fetches the report document's signed download URL,
+// then downloads and decompresses (if needed) the underlying file. Returns
+// raw bytes — callers parse according to their own report type's format.
+func (c *Client) DownloadReportDocument(ctx context.Context, accessToken string, region Region, reportDocumentID string) ([]byte, error) {
 	doc, err := withRetry(ctx, func() (*reportDocumentResponse, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, region.BaseURL+"/reports/2021-06-30/documents/"+reportDocumentID, nil)
 		if err != nil {
@@ -197,7 +213,7 @@ func (c *Client) DownloadReport(ctx context.Context, accessToken string, region 
 		return nil, fmt.Errorf("download report file: %w", err)
 	}
 
-	return parseSalesAndTrafficReport(rawBody)
+	return rawBody, nil
 }
 
 // salesAndTrafficReport mirrors the subset of GET_SALES_AND_TRAFFIC_REPORT's

@@ -169,6 +169,13 @@
       "when": 1785724884338,
       "tag": "0023_curly_captain_universe",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785742046689,
+      "tag": "0024_tranquil_famine",
+      "breakpoints": true
     }
   ]
 }

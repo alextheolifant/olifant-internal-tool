@@ -321,39 +321,13 @@ func (w *Writer) UpsertInventory(ctx context.Context, i InventoryUpsert) error {
 }
 
 // ── Catalog items (catalog_items + product_economics enrichment) ──────────────
-
-// FetchClientAsins returns the distinct ASINs already entered in
-// product_economics for a client — the seed list for Catalog Items lookups.
-// Ads campaign/targeting data carries no ASINs to auto-discover from, so the
-// team's manually-entered roster is the only real starting point.
-func (w *Writer) FetchClientAsins(ctx context.Context, clientID string) ([]string, error) {
-	rows, err := w.pool.Query(ctx,
-		`SELECT DISTINCT asin FROM product_economics WHERE client_id = $1 ORDER BY asin`,
-		clientID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("fetch client asins: %w", err)
-	}
-	defer rows.Close()
-
-	var asins []string
-	for rows.Next() {
-		var asin string
-		if err := rows.Scan(&asin); err != nil {
-			return nil, fmt.Errorf("scan asin: %w", err)
-		}
-		asins = append(asins, asin)
-	}
-	return asins, rows.Err()
-}
-
-// CatalogItemUpsert holds one ASIN's catalog snapshot to write to catalog_items.
-type CatalogItemUpsert struct {
-	AmazonSPAccountID string
-	ASIN              string
-	ProductName       string // "" is written as NULL — never fabricate a name
-	Status            string // "" is written as NULL
-}
+//
+// Source is the GET_MERCHANT_LISTINGS_ALL_DATA report (internal/sync/catalog.go)
+// — it's inherently seller-scoped and works for FBM sellers too, unlike FBA
+// inventory. catalog_items holds every ASIN the report returns, independent
+// of whether the team has already added that ASIN to product_economics.
+// PropagateProductName is the only bridge into product_economics, and it
+// only ever touches that one column on rows that already exist there.
 
 func nullIfEmpty(s string) any {
 	if s == "" {
@@ -362,18 +336,28 @@ func nullIfEmpty(s string) any {
 	return s
 }
 
+// CatalogItemUpsert holds one listing's snapshot to write to catalog_items.
+type CatalogItemUpsert struct {
+	AmazonSPAccountID string
+	ASIN              string
+	SellerSKU         string
+	ProductName       string // "" is written as NULL — never fabricate a name
+	Status            string // "" is written as NULL
+}
+
 // UpsertCatalogItem inserts or updates one row in catalog_items. The unique
 // key is (amazon_sp_account_id, asin) — re-running a sync is idempotent.
 func (w *Writer) UpsertCatalogItem(ctx context.Context, c CatalogItemUpsert) error {
 	_, err := w.pool.Exec(ctx, `
-		INSERT INTO catalog_items (amazon_sp_account_id, asin, product_name, status, last_synced_at)
-		VALUES ($1, $2, $3, $4, now())
+		INSERT INTO catalog_items (amazon_sp_account_id, asin, seller_sku, product_name, status, last_synced_at)
+		VALUES ($1, $2, $3, $4, $5, now())
 		ON CONFLICT (amazon_sp_account_id, asin) DO UPDATE SET
+			seller_sku     = EXCLUDED.seller_sku,
 			product_name   = EXCLUDED.product_name,
 			status         = EXCLUDED.status,
 			last_synced_at = now(),
 			updated_at     = now()`,
-		c.AmazonSPAccountID, c.ASIN, nullIfEmpty(c.ProductName), nullIfEmpty(c.Status),
+		c.AmazonSPAccountID, c.ASIN, nullIfEmpty(c.SellerSKU), nullIfEmpty(c.ProductName), nullIfEmpty(c.Status),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert catalog item: %w", err)
