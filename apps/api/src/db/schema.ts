@@ -64,6 +64,20 @@ export const anomalySeverityEnum = pgEnum('anomaly_severity', [
   'act_now',
 ]);
 
+export const ppcStrategyEnum = pgEnum('ppc_strategy', [
+  'launch',
+  'growth',
+  'maintain',
+]);
+
+export const ppcAccountTargetMetricEnum = pgEnum('ppc_account_target_metric', [
+  'acos',
+  'tacos',
+]);
+
+// active = normal operation. frozen = exceptions only, no optimization tasks.
+export const ppcOpsStatusEnum = pgEnum('ppc_ops_status', ['active', 'frozen']);
+
 // ─── Tables ──────────────────────────────────────────────────────────────────
 
 export const organizations = pgTable('organizations', {
@@ -628,6 +642,110 @@ export const copilotMessagesRelations = relations(
     conversation: one(copilotConversations, {
       fields: [copilotMessages.conversationId],
       references: [copilotConversations.id],
+    }),
+  }),
+);
+
+// ─── PPC Engine: client config ─────────────────────────────────────────────────
+// One row per client (1:1) — PPC-specific settings, kept out of the core
+// `clients` table so the task/rule engine's config doesn't bloat the generic
+// client record.
+export const ppcClientConfigs = pgTable(
+  'ppc_client_configs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    // PPC-ops status — deliberately separate from clients.status (the CRM
+    // lifecycle: Active/Onboarding/Paused/Churned). frozen = exceptions only,
+    // no optimization tasks generated for this account.
+    opsStatus: ppcOpsStatusEnum('ops_status').notNull().default('active'),
+    monthlyAdBudget: numeric('monthly_ad_budget', { precision: 12, scale: 2 }),
+    // Fallback bid-math defaults used when a product has no economics row of
+    // its own. marginDefault doubles as the account's default break-even
+    // ACOS (BE = margin) — displayed as "BE" in the UI, not stored twice.
+    marginDefault: numeric('margin_default', { precision: 5, scale: 2 }),
+    targetAcosDefault: numeric('target_acos_default', { precision: 5, scale: 2 }),
+    // Account-level rollup/reporting target — independent of the bid-math
+    // fallback above. Purely a reporting number; bid/rule math (a later
+    // phase) always reads the per-product targets, never this.
+    accountTargetMetric: ppcAccountTargetMetricEnum('account_target_metric')
+      .notNull()
+      .default('tacos'),
+    accountTargetMetricValue: numeric('account_target_metric_value', { precision: 5, scale: 2 }),
+    brandTerms: jsonb('brand_terms').notNull().default([]),
+    ownAsins: jsonb('own_asins').notNull().default([]),
+    // Array of { campaignName: string, objective: 'performance' | 'defense' | 'ntb' }.
+    sbObjectives: jsonb('sb_objectives').notNull().default([]),
+    // Array of { asin: string, campaignName: string, maxTargets: number | null }
+    // — which campaign receives harvested keywords for a given ASIN, and an
+    // optional cap on how many targets that campaign should hold.
+    harvestDestinationCampaigns: jsonb('harvest_destination_campaigns'),
+    // Record<ruleName, overrideValue> — per-client overrides of default rule
+    // thresholds. Starts empty; the rule engine that reads this is a later
+    // phase, this table just holds the config for it.
+    thresholdOverrides: jsonb('threshold_overrides'),
+    standingDirectives: text('standing_directives'),
+    conservativeMode: boolean('conservative_mode').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [uniqueIndex('uq_ppc_client_config_client').on(t.clientId)],
+);
+
+export const ppcClientConfigsRelations = relations(
+  ppcClientConfigs,
+  ({ one }) => ({
+    client: one(clients, {
+      fields: [ppcClientConfigs.clientId],
+      references: [clients.id],
+    }),
+  }),
+);
+
+// ─── PPC Engine: product economics roster ──────────────────────────────────────
+// Auto-population from Amazon's Catalog Items API is a later phase (needs that
+// SP-API endpoint synced, not yet built) — today's Ads sync doesn't carry
+// product-ad/ASIN-level data either, so this roster starts empty and is
+// manually maintained until then.
+export const productEconomics = pgTable(
+  'product_economics',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    asin: varchar('asin', { length: 20 }).notNull(),
+    productName: varchar('product_name', { length: 255 }),
+    margin: numeric('margin', { precision: 5, scale: 2 }),
+    strategy: ppcStrategyEnum('strategy'),
+    targetAcos: numeric('target_acos', { precision: 5, scale: 2 }),
+    targetTacos: numeric('target_tacos', { precision: 5, scale: 2 }),
+    launchUntil: date('launch_until'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('uq_product_economics_client_asin').on(t.clientId, t.asin),
+    index('idx_product_economics_client').on(t.clientId),
+  ],
+);
+
+export const productEconomicsRelations = relations(
+  productEconomics,
+  ({ one }) => ({
+    client: one(clients, {
+      fields: [productEconomics.clientId],
+      references: [clients.id],
     }),
   }),
 );

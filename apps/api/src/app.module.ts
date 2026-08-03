@@ -18,6 +18,7 @@ import { AnomaliesModule } from './modules/anomalies/anomalies.module';
 import { ProposalsModule } from './modules/proposals/proposals.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { PpcModule } from './modules/ppc/ppc.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     ProposalsModule,
     ReportsModule,
     NotificationsModule,
+    PpcModule,
   ],
   controllers: [AppController],
   providers: [
