@@ -326,8 +326,11 @@ func (w *Writer) UpsertInventory(ctx context.Context, i InventoryUpsert) error {
 // — it's inherently seller-scoped and works for FBM sellers too, unlike FBA
 // inventory. catalog_items holds every ASIN the report returns, independent
 // of whether the team has already added that ASIN to product_economics.
-// PropagateProductName is the only bridge into product_economics, and it
-// only ever touches that one column on rows that already exist there.
+// EnsureProductEconomicsRow auto-creates a bare roster row for active
+// listings (never overwriting existing manual data), and PropagateProductName
+// keeps product_name in sync on whatever row now exists — the only two writes
+// this sync ever makes into product_economics; margin/strategy/targets/
+// launch_until stay team-entered always.
 
 func nullIfEmpty(s string) any {
 	if s == "" {
@@ -361,6 +364,24 @@ func (w *Writer) UpsertCatalogItem(ctx context.Context, c CatalogItemUpsert) err
 	)
 	if err != nil {
 		return fmt.Errorf("upsert catalog item: %w", err)
+	}
+	return nil
+}
+
+// EnsureProductEconomicsRow inserts a bare product_economics row (product_name
+// only — margin/strategy/target_acos/target_tacos/launch_until left NULL for
+// the team to fill in) if one doesn't already exist for (client, asin). A
+// no-op if a row already exists, so it can never clobber team-entered data;
+// it only ensures an active catalog ASIN actually appears on the roster.
+func (w *Writer) EnsureProductEconomicsRow(ctx context.Context, clientID, asin, productName string) error {
+	_, err := w.pool.Exec(ctx,
+		`INSERT INTO product_economics (client_id, asin, product_name)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (client_id, asin) DO NOTHING`,
+		clientID, asin, nullIfEmpty(productName),
+	)
+	if err != nil {
+		return fmt.Errorf("ensure product economics row: %w", err)
 	}
 	return nil
 }

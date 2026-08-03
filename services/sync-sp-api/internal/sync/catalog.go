@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -285,9 +286,11 @@ func (o *CatalogOrchestrator) pollPendingReports(ctx context.Context, deadline t
 }
 
 // processCompleted downloads and parses the listings report, upserts one
-// catalog_items row per listing, and propagates product_name into any
-// matching product_economics row (never creating new ones, never touching
-// margin/strategy/targets/launch_until).
+// catalog_items row per listing, auto-creates a bare product_economics row
+// for active listings that don't have one yet (so the roster reflects the
+// catalog without requiring manual ASIN entry), and propagates product_name
+// into whichever row now exists — never touching margin/strategy/targets/
+// launch_until on rows that already existed.
 func (o *CatalogOrchestrator) processCompleted(ctx context.Context, ac *accountContext, row db.PendingReportRequest, reportDocumentID string) (int, error) {
 	token, err := ac.tokens.Token(ctx)
 	if err != nil {
@@ -311,6 +314,12 @@ func (o *CatalogOrchestrator) processCompleted(ctx context.Context, ac *accountC
 			return written, fmt.Errorf("upsert catalog item: %w", err)
 		}
 		written++
+
+		if strings.EqualFold(l.Status, "active") {
+			if err := o.writer.EnsureProductEconomicsRow(ctx, ac.account.ClientID, l.ASIN, l.ProductName); err != nil {
+				return written, fmt.Errorf("ensure product economics row: %w", err)
+			}
+		}
 
 		if err := o.writer.PropagateProductName(ctx, ac.account.ClientID, l.ASIN, l.ProductName); err != nil {
 			return written, fmt.Errorf("propagate product name: %w", err)
