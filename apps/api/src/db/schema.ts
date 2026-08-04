@@ -765,10 +765,10 @@ export const ppcClientConfigsRelations = relations(
 );
 
 // ─── PPC Engine: product economics roster ──────────────────────────────────────
-// Auto-population from Amazon's Catalog Items API is a later phase (needs that
-// SP-API endpoint synced, not yet built) — today's Ads sync doesn't carry
-// product-ad/ASIN-level data either, so this roster starts empty and is
-// manually maintained until then.
+// asin/productName rows are auto-created and productName kept in sync by the
+// SP-API catalog sync (services/sync-sp-api/internal/sync/catalog.go) for
+// every active listing it finds. margin/strategy/targetAcos/targetTacos/
+// launchUntil are exclusively team-entered — the sync never writes them.
 export const productEconomics = pgTable(
   'product_economics',
   {
@@ -801,6 +801,86 @@ export const productEconomicsRelations = relations(
   ({ one }) => ({
     client: one(clients, {
       fields: [productEconomics.clientId],
+      references: [clients.id],
+    }),
+  }),
+);
+
+// ─── PPC Engine: rule runner (Today screen exception rules) ────────────────────
+// task_candidates is a raw, undeduplicated feed for the task layer (dedup,
+// scoring, enqueueing) — deliberately not built yet. Re-running evaluation for
+// the same day can produce duplicate rows; that's a known TODO for the task
+// layer, not a bug in the runner.
+export const taskCandidates = pgTable(
+  'task_candidates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    ruleId: varchar('rule_id', { length: 20 }).notNull(),
+    entityType: varchar('entity_type', { length: 50 }).notNull(),
+    entityId: varchar('entity_id', { length: 255 }).notNull(),
+    evaluatedAt: timestamp('evaluated_at', { withTimezone: true }).notNull(),
+    evidence: jsonb('evidence').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('idx_task_candidates_client_rule_entity').on(
+      t.clientId,
+      t.ruleId,
+      t.entityId,
+    ),
+  ],
+);
+
+export const taskCandidatesRelations = relations(taskCandidates, ({ one }) => ({
+  client: one(clients, {
+    fields: [taskCandidates.clientId],
+    references: [clients.id],
+  }),
+}));
+
+// Backs two runner-level guards, tracked per (client, rule, entity):
+//   - persistence guard: streakCount — consecutive days the ENTER threshold
+//     has held, before a non-D-band rule is allowed to fire.
+//   - hysteresis: isActive — once true, the next evaluation re-checks against
+//     the looser CLEAR threshold instead of ENTER, so an entity hovering right
+//     at the line doesn't flicker in and out.
+export const ruleConditionState = pgTable(
+  'rule_condition_state',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    ruleId: varchar('rule_id', { length: 20 }).notNull(),
+    entityType: varchar('entity_type', { length: 50 }).notNull(),
+    entityId: varchar('entity_id', { length: 255 }).notNull(),
+    isActive: boolean('is_active').notNull().default(false),
+    streakCount: integer('streak_count').notNull().default(0),
+    lastEvaluatedDate: date('last_evaluated_date').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('uq_rule_condition_state_client_rule_entity').on(
+      t.clientId,
+      t.ruleId,
+      t.entityType,
+      t.entityId,
+    ),
+  ],
+);
+
+export const ruleConditionStateRelations = relations(
+  ruleConditionState,
+  ({ one }) => ({
+    client: one(clients, {
+      fields: [ruleConditionState.clientId],
       references: [clients.id],
     }),
   }),
