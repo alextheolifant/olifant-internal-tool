@@ -16,6 +16,8 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY packages/ ./packages/
 COPY apps/web/ ./apps/web/
+# Copy workspace-local node_modules (pnpm places packages with peer deps here, not root)
+COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm --filter web build
 
