@@ -1,5 +1,5 @@
 FROM node:22-alpine AS base
-RUN npm install -g pnpm@10
+RUN npm install -g pnpm@10.34.5
 
 # Install dependencies (cache layer — only re-runs when lock file changes)
 FROM base AS deps

@@ -1,5 +1,5 @@
 FROM node:22-alpine AS base
-RUN npm install -g pnpm@10
+RUN npm install -g pnpm@10.34.5
 
 FROM base AS builder
 WORKDIR /app
