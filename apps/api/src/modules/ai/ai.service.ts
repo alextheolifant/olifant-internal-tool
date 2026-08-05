@@ -32,6 +32,28 @@ interface TokenUsage {
   outputTokens: number | null;
 }
 
+// Step ids match real phases of work in streamReply below — do not add a step
+// that doesn't correspond to actual work being done at that point.
+export type CopilotStepId = 'history' | 'metrics' | 'context' | 'reasoning';
+
+export interface CopilotStepEvent {
+  type: 'step';
+  id: CopilotStepId;
+  label: string;
+  status: 'running' | 'complete';
+}
+
+export interface CopilotDeltaEvent {
+  type: 'delta';
+  text: string;
+}
+
+export type CopilotStreamEvent = CopilotStepEvent | CopilotDeltaEvent;
+
+function step(id: CopilotStepId, label: string, status: 'running' | 'complete'): CopilotStepEvent {
+  return { type: 'step', id, label, status };
+}
+
 interface ClientMetricRow {
   id: string;
   name: string;
@@ -103,16 +125,25 @@ export class AiService {
     this.anthropic = new Anthropic();
   }
 
-  private async buildCopilotContext(
-    accountId: string,
+  // Split from context formatting so the fetch and the formatting can each be
+  // reported as their own step over the stream (see streamReply).
+  private async fetchMetricsForContext(
     from: string,
     to: string,
-  ): Promise<string> {
+  ): Promise<ClientMetricsResult> {
     // Reuses the exact aggregation the /metrics/clients endpoint uses — no separate query path.
-    const result = (await this.metricsService.getClientMetrics(
+    return (await this.metricsService.getClientMetrics(
       from,
       to,
     )) as ClientMetricsResult;
+  }
+
+  private formatContext(
+    accountId: string,
+    result: ClientMetricsResult,
+    from: string,
+    to: string,
+  ): string {
     const period = `${from} to ${to}`;
 
     if (accountId === 'all') {
@@ -142,21 +173,52 @@ export class AiService {
   }
 
   /**
-   * Resolves the conversation and builds the full prompt. Runs before any bytes
-   * are written to the response, so failures here still produce a normal Nest
-   * JSON error response instead of a mid-stream one.
+   * Resolves (or creates) the conversation. Runs before any bytes are written
+   * to the response, so failures here still produce a normal Nest JSON error
+   * response. Everything after this — history load, metrics fetch, context
+   * build, the Anthropic call — happens inside streamReply and is reported as
+   * step/delta events over the stream instead, since by then headers are
+   * already sent and a thrown exception can no longer become a clean HTTP
+   * error response (the controller's existing catch block turns it into an
+   * {type:'error'} stream event instead — same mechanism the Anthropic-call
+   * failure path already used before this change).
    */
-  async prepareMessage(
+  async resolveConversation(
     userId: string,
     dto: SendCopilotMessageDto,
-  ): Promise<{ conversationId: string; message: string; userContent: string }> {
+  ): Promise<{ conversationId: string; isNewConversation: boolean }> {
+    if (dto.conversationId) {
+      await this.assertOwnedConversation(userId, dto.conversationId);
+      return { conversationId: dto.conversationId, isNewConversation: false };
+    }
+    const [conversation] = await this.drizzle.db
+      .insert(copilotConversations)
+      .values({
+        clientId: dto.accountId === 'all' ? null : dto.accountId,
+        userId,
+      })
+      .returning();
+    return { conversationId: conversation.id, isNewConversation: true };
+  }
+
+  /**
+   * Streams step events for the work leading up to the Anthropic call, then
+   * the reply itself as it's generated. Persists the user + assistant turn
+   * once streaming finishes — including a partial assistant reply if the
+   * client stopped generation mid-stream, but nothing at all on a genuine
+   * Anthropic failure.
+   */
+  async *streamReply(
+    conversationId: string,
+    isNewConversation: boolean,
+    dto: SendCopilotMessageDto,
+    signal: AbortSignal | undefined,
+  ): AsyncGenerator<CopilotStreamEvent, void, unknown> {
     const { accountId, message } = dto;
-    let conversationId = dto.conversationId;
     let priorTurns: { role: string; content: string }[] = [];
 
-    if (conversationId) {
-      await this.assertOwnedConversation(userId, conversationId);
-
+    if (!isNewConversation) {
+      yield step('history', 'Loading conversation history', 'running');
       const rows = await this.drizzle.db.query.copilotMessages.findMany({
         where: eq(copilotMessages.conversationId, conversationId),
         orderBy: (m, { desc }) => [desc(m.createdAt)],
@@ -165,21 +227,15 @@ export class AiService {
       priorTurns = rows
         .reverse()
         .map((r) => ({ role: r.role, content: r.content }));
-    } else {
-      const [conversation] = await this.drizzle.db
-        .insert(copilotConversations)
-        .values({
-          clientId: accountId === 'all' ? null : accountId,
-          userId,
-        })
-        .returning();
-      conversationId = conversation.id;
+      yield step('history', 'Loading conversation history', 'complete');
     }
 
     const { from, to } = defaultDateRange();
-    let context: string;
+
+    yield step('metrics', 'Fetching account metrics', 'running');
+    let metricsResult: ClientMetricsResult;
     try {
-      context = await this.buildCopilotContext(accountId, from, to);
+      metricsResult = await this.fetchMetricsForContext(from, to);
     } catch (err) {
       this.logger.error(
         'Failed to build copilot context',
@@ -189,11 +245,13 @@ export class AiService {
         'The co-pilot is temporarily unavailable. Please try again.',
       );
     }
+    yield step('metrics', 'Fetching account metrics', 'complete');
 
+    yield step('context', 'Building context', 'running');
+    const context = this.formatContext(accountId, metricsResult, from, to);
     const priorTurnsText = priorTurns
       .map((t) => `${t.role === 'user' ? 'User' : 'Co-pilot'}: ${t.content}`)
       .join('\n');
-
     const userContent = [
       `LIVE DATA:\n${context}`,
       priorTurnsText,
@@ -201,23 +259,12 @@ export class AiService {
     ]
       .filter(Boolean)
       .join('\n\n');
+    yield step('context', 'Building context', 'complete');
 
-    return { conversationId, message, userContent };
-  }
-
-  /**
-   * Streams the reply as it's generated. Persists the user + assistant turn once
-   * streaming finishes — including a partial assistant reply if the client stopped
-   * generation mid-stream, but nothing at all on a genuine Anthropic failure.
-   */
-  async *streamReply(
-    conversationId: string,
-    message: string,
-    userContent: string,
-    signal: AbortSignal | undefined,
-  ): AsyncGenerator<string, void, unknown> {
+    yield step('reasoning', 'Reasoning', 'running');
     let reply = '';
     let usage: TokenUsage = { inputTokens: null, outputTokens: null };
+    let reasoningStepClosed = false;
     try {
       const stream = this.anthropic.messages.stream(
         {
@@ -234,9 +281,21 @@ export class AiService {
           event.type === 'content_block_delta' &&
           event.delta.type === 'text_delta'
         ) {
+          // "Reasoning" is complete once the first content token arrives —
+          // matches the task's own definition of that step's boundary.
+          if (!reasoningStepClosed) {
+            yield step('reasoning', 'Reasoning', 'complete');
+            reasoningStepClosed = true;
+          }
           reply += event.delta.text;
-          yield event.delta.text;
+          yield { type: 'delta', text: event.delta.text };
         }
+      }
+      // Safety net: a reply with zero content deltas (empty response) would
+      // otherwise leave "Reasoning" stuck at "running" forever.
+      if (!reasoningStepClosed) {
+        yield step('reasoning', 'Reasoning', 'complete');
+        reasoningStepClosed = true;
       }
 
       const finalMessage = await stream.finalMessage();

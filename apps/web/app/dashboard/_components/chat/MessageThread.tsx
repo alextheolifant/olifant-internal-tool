@@ -3,6 +3,8 @@
 import { useEffect, useRef } from "react";
 import type { ChatMessage } from "../../_lib/chat-types";
 import { IconSparkle } from "./icons";
+import { MarkdownContent } from "./MarkdownContent";
+import { StepStack } from "./StepStack";
 
 interface MessageThreadProps {
   messages: ChatMessage[];
@@ -30,19 +32,29 @@ export function MessageThread({ messages, isLoading, accountLabel }: MessageThre
     <div className="mx-auto w-full max-w-195">
       {messages.map((m, idx) => {
         const isUser = m.role === "user";
-        const isStreamingPlaceholder =
-          !isUser && isLoading && idx === messages.length - 1 && m.content.length === 0;
+        // True for the whole time this assistant message is actively being
+        // generated (empty placeholder AND mid-reveal). Markdown renders the
+        // whole time now (via Streamdown, which tolerates incomplete syntax
+        // mid-stream) — isStreamingNow just tells MarkdownContent which mode
+        // to parse in, and gates the empty-content placeholder text.
+        const isStreamingNow = !isUser && isLoading && idx === messages.length - 1;
+        const isStreamingPlaceholder = isStreamingNow && m.content.length === 0;
         return (
           <div key={m.id} className="mb-4">
             {!isUser && <ChatLabel suffix={accountLabel} />}
+            {!isUser && m.steps && m.steps.length > 0 && <StepStack steps={m.steps} />}
             <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-              <div
-                className={`max-w-[80%] whitespace-pre-wrap rounded-xl px-3.75 py-2.75 text-[13.5px] leading-relaxed ${
-                  isUser ? "bg-ink text-neutral-50" : "border border-neutral-200 bg-surface text-neutral-700"
-                } ${isStreamingPlaceholder ? "text-neutral-400" : ""}`}
-              >
-                {isStreamingPlaceholder ? `Analyzing ${accountLabel} data…` : m.content}
-              </div>
+              {isUser ? (
+                <div className="max-w-[80%] whitespace-pre-wrap rounded-xl bg-ink px-3.75 py-2.75 text-[13.5px] leading-relaxed text-neutral-50">
+                  {m.content}
+                </div>
+              ) : isStreamingPlaceholder ? (
+                <div className="w-full text-[13.5px] leading-relaxed text-neutral-400">
+                  Analyzing {accountLabel} data…
+                </div>
+              ) : (
+                <MarkdownContent content={m.content} isStreaming={isStreamingNow} />
+              )}
             </div>
           </div>
         );

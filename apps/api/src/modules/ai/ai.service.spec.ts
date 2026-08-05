@@ -3,16 +3,34 @@ import { AiService } from './ai.service';
 import { DrizzleService } from '../../db/drizzle.service';
 import { MetricsService } from '../metrics/metrics.service';
 
-// AiService's constructor eagerly builds a real Anthropic client. These unit
-// tests only exercise prepareMessage/buildCopilotContext, which never touch
-// it — but the real SDK's async credential-file lookup outlives the test and
-// trips a Jest "environment torn down" error. Stub it out entirely.
+// AiService's constructor eagerly builds a real Anthropic client. Stub it out
+// entirely — the real SDK's async credential-file lookup outlives the test
+// and trips a Jest "environment torn down" error. mockAnthropicStream is
+// shared across tests that need to observe/control the Anthropic call
+// (Jest's hoist-safe naming convention lets a jest.mock factory reference a
+// variable prefixed "mock").
+const mockAnthropicStream = jest.fn();
 jest.mock('@anthropic-ai/sdk', () => ({
   __esModule: true,
   default: jest
     .fn()
-    .mockImplementation(() => ({ messages: { stream: jest.fn() } })),
+    .mockImplementation(() => ({ messages: { stream: mockAnthropicStream } })),
 }));
+
+// Default: an empty reply with no usage — enough for tests that only care
+// about the steps before the Anthropic call.
+function emptyAnthropicStream() {
+  return {
+    [Symbol.asyncIterator]: async function* () {},
+    finalMessage: jest.fn().mockResolvedValue({ usage: undefined }),
+  };
+}
+
+async function drain<T>(gen: AsyncGenerator<T, void, unknown>): Promise<T[]> {
+  const events: T[] = [];
+  for await (const e of gen) events.push(e);
+  return events;
+}
 
 const PENDING = "not connected (client hasn't authorized SP-API access yet)";
 
@@ -124,19 +142,20 @@ describe('AiService', () => {
     metricsService = {
       getClientMetrics: jest.fn().mockResolvedValue(buildMetricsFixture()),
     };
+    mockAnthropicStream.mockReset().mockReturnValue(emptyAnthropicStream());
     service = new AiService(
       drizzle as unknown as DrizzleService,
       metricsService as unknown as MetricsService,
     );
   });
 
-  describe('buildCopilotContext', () => {
+  describe('formatContext', () => {
     const call = (accountId: string) =>
       (
         service as unknown as {
-          buildCopilotContext(a: string, f: string, t: string): Promise<string>;
+          formatContext(a: string, r: unknown, f: string, t: string): string;
         }
-      ).buildCopilotContext(accountId, '2026-06-13', '2026-07-13');
+      ).formatContext(accountId, buildMetricsFixture(), '2026-06-13', '2026-07-13');
 
     it('renders the "all clients" snapshot with real metrics as numbers and pending metrics as explicit text', async () => {
       const context = await call('all');
@@ -185,9 +204,9 @@ describe('AiService', () => {
     });
   });
 
-  describe('prepareMessage', () => {
+  describe('resolveConversation', () => {
     it('creates a new "all clients" conversation (null clientId) when no conversationId is given', async () => {
-      const result = await service.prepareMessage('user-1', {
+      const result = await service.resolveConversation('user-1', {
         accountId: 'all',
         message: 'Hi',
       });
@@ -198,12 +217,11 @@ describe('AiService', () => {
         userId: 'user-1',
       });
       expect(result.conversationId).toBe('new-conversation-id');
-      expect(result.userContent).toContain('LIVE DATA:');
-      expect(result.userContent).toContain('User: Hi');
+      expect(result.isNewConversation).toBe(true);
     });
 
     it('creates a new client-scoped conversation when accountId is a client id', async () => {
-      await service.prepareMessage('user-1', {
+      await service.resolveConversation('user-1', {
         accountId: 'client-real',
         message: 'Hi',
       });
@@ -217,7 +235,7 @@ describe('AiService', () => {
       drizzle._mocks.findFirst.mockResolvedValue(undefined);
 
       await expect(
-        service.prepareMessage('user-1', {
+        service.resolveConversation('user-1', {
           accountId: 'all',
           conversationId: 'not-mine',
           message: 'Hi',
@@ -225,11 +243,56 @@ describe('AiService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('folds prior turns into the prompt as "User: ...\\nCo-pilot: ..." before the new message', async () => {
-      drizzle._mocks.findFirst.mockResolvedValue({
-        id: 'conv-1',
-        userId: 'user-1',
+    it('recognizes an existing conversation and does not create a new one', async () => {
+      drizzle._mocks.findFirst.mockResolvedValue({ id: 'conv-1', userId: 'user-1' });
+
+      const result = await service.resolveConversation('user-1', {
+        accountId: 'all',
+        conversationId: 'conv-1',
+        message: 'Hi',
       });
+
+      expect(result).toEqual({ conversationId: 'conv-1', isNewConversation: false });
+      expect(drizzle._mocks.insert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('streamReply', () => {
+    it('emits history/metrics/context/reasoning steps in order, then delta and done', async () => {
+      mockAnthropicStream.mockReturnValue({
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hi' } };
+        },
+        finalMessage: jest.fn().mockResolvedValue({ usage: undefined }),
+      });
+
+      const events = await drain(
+        service.streamReply('conv-1', false, { accountId: 'all', message: 'Hi' }, undefined),
+      );
+
+      const stepIds = events.filter((e) => e.type === 'step').map((e: any) => `${e.id}:${e.status}`);
+      expect(stepIds).toEqual([
+        'history:running',
+        'history:complete',
+        'metrics:running',
+        'metrics:complete',
+        'context:running',
+        'context:complete',
+        'reasoning:running',
+        'reasoning:complete',
+      ]);
+      expect(events).toContainEqual({ type: 'delta', text: 'Hi' });
+    });
+
+    it('skips the history step for a brand-new conversation', async () => {
+      const events = await drain(
+        service.streamReply('conv-1', true, { accountId: 'all', message: 'Hi' }, undefined),
+      );
+      const stepIds = events.filter((e) => e.type === 'step').map((e: any) => e.id);
+      expect(stepIds).not.toContain('history');
+    });
+
+    it('folds prior turns into the prompt sent to Anthropic as "User: ...\\nCo-pilot: ..." before the new message', async () => {
       // Service queries DESC (newest first) + reverses — mock returns rows in that
       // same DESC order so the reverse produces the chronological order asserted below.
       drizzle._mocks.findMany.mockResolvedValue([
@@ -237,19 +300,16 @@ describe('AiService', () => {
         { role: 'user', content: 'What is our ACoS?' },
       ]);
 
-      const result = await service.prepareMessage('user-1', {
-        accountId: 'all',
-        conversationId: 'conv-1',
-        message: 'And ROAS?',
-      });
+      await drain(
+        service.streamReply('conv-1', false, { accountId: 'all', message: 'And ROAS?' }, undefined),
+      );
 
-      expect(result.conversationId).toBe('conv-1');
-      expect(result.userContent).toContain(
+      const sentContent = mockAnthropicStream.mock.calls[0][0].messages[0].content;
+      expect(sentContent).toContain('LIVE DATA:');
+      expect(sentContent).toContain(
         "User: What is our ACoS?\nCo-pilot: It's 34.3%.",
       );
-      expect(result.userContent).toContain('User: And ROAS?');
-      // Existing conversation — must not create a new one.
-      expect(drizzle._mocks.insert).not.toHaveBeenCalled();
+      expect(sentContent).toContain('User: And ROAS?');
     });
 
     it('throws ServiceUnavailableException without fabricating context when live-data lookup fails', async () => {
@@ -258,7 +318,7 @@ describe('AiService', () => {
       );
 
       await expect(
-        service.prepareMessage('user-1', { accountId: 'all', message: 'Hi' }),
+        drain(service.streamReply('conv-1', true, { accountId: 'all', message: 'Hi' }, undefined)),
       ).rejects.toThrow(ServiceUnavailableException);
     });
   });

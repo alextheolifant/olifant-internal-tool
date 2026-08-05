@@ -2,7 +2,8 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useClientRoster } from "../../_lib/use-client-roster";
-import { streamCopilotMessage } from "../../_lib/copilot-api";
+import { streamCopilotMessage, type CopilotStep } from "../../_lib/copilot-api";
+import { usePacedReveal } from "../../_lib/use-paced-reveal";
 import type { ChatMessage } from "../../_lib/chat-types";
 import UserMenu from "../user-menu";
 import { AccountSelector } from "./AccountSelector";
@@ -30,6 +31,17 @@ export function ChatView() {
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // usePacedReveal is instantiated once and reused across sends, so its
+  // onReveal callback needs to know which message is currently streaming —
+  // tracked via a ref, updated at the start of each send().
+  const streamingMessageIdRef = useRef<string | null>(null);
+  const handleReveal = useCallback((revealedText: string) => {
+    const id = streamingMessageIdRef.current;
+    if (!id) return;
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, content: revealedText } : m)));
+  }, []);
+  const pacedReveal = usePacedReveal(handleReveal);
+
   const handleSelectAccount = useCallback((id: string, name: string) => {
     setSelectedId(id);
     setAccountLabel(name);
@@ -41,10 +53,12 @@ export function ChatView() {
       if (!trimmed || isSending) return;
 
       const assistantId = newMessageId();
+      streamingMessageIdRef.current = assistantId;
+      pacedReveal.reset();
       setMessages((prev) => [
         ...prev,
         { id: newMessageId(), role: "user", content: trimmed },
-        { id: assistantId, role: "assistant", content: "" },
+        { id: assistantId, role: "assistant", content: "", steps: [] },
       ]);
       setInput("");
       setSending(true);
@@ -52,12 +66,24 @@ export function ChatView() {
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      const updateAssistantMessage = (updater: (content: string) => string) => {
-        setMessages((prev) =>
-          prev.map((m) => (m.id === assistantId ? { ...m, content: updater(m.content) } : m)),
-        );
+      const updateAssistantMessage = (updater: (m: ChatMessage) => Partial<ChatMessage>) => {
+        setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, ...updater(m) } : m)));
       };
-      const appendDelta = (delta: string) => updateAssistantMessage((content) => content + delta);
+
+      const onStep = (evt: CopilotStep) => {
+        updateAssistantMessage((m) => {
+          const existing = m.steps ?? [];
+          const idx = existing.findIndex((s) => s.id === evt.id);
+          // Steps accumulate — an existing step's status is updated in place
+          // (running -> complete), a new step id is appended, never replacing
+          // what's already there.
+          const nextSteps =
+            idx >= 0
+              ? existing.map((s, i) => (i === idx ? evt : s))
+              : [...existing, evt];
+          return { steps: nextSteps };
+        });
+      };
 
       try {
         const result = await streamCopilotMessage({
@@ -65,25 +91,28 @@ export function ChatView() {
           message: trimmed,
           conversationId,
           signal: controller.signal,
-          onDelta: appendDelta,
+          onDelta: pacedReveal.push,
+          onStep,
         });
+        pacedReveal.flush();
         setConversationId(result.conversationId);
       } catch (err) {
+        pacedReveal.flush();
         if (err instanceof DOMException && err.name === "AbortError") {
-          updateAssistantMessage((content) =>
-            content.length === 0 ? "Stopped before generating a response." : content,
-          );
+          updateAssistantMessage((m) => ({
+            content: m.content.length === 0 ? "Stopped before generating a response." : m.content,
+          }));
         } else {
-          updateAssistantMessage(
-            () => "Sorry, the co-pilot is temporarily unavailable. Please try again in a moment.",
-          );
+          updateAssistantMessage(() => ({
+            content: "Sorry, the co-pilot is temporarily unavailable. Please try again in a moment.",
+          }));
         }
       } finally {
         setSending(false);
         abortControllerRef.current = null;
       }
     },
-    [selectedId, conversationId, isSending],
+    [selectedId, conversationId, isSending, pacedReveal.push, pacedReveal.flush, pacedReveal.reset],
   );
 
   const stop = useCallback(() => {

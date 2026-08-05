@@ -38,8 +38,8 @@ export class AiController {
   ) {
     // Injecting @Res() (without passthrough) puts Nest in library mode for this
     // handler — we own the response end-to-end from here.
-    const { conversationId, message, userContent } =
-      await this.aiService.prepareMessage(req.user.id, dto);
+    const { conversationId, isNewConversation } =
+      await this.aiService.resolveConversation(req.user.id, dto);
 
     // If the client disconnects (e.g. hits "Stop"), cancel the in-flight Anthropic
     // call too instead of letting it run to completion for nobody. `res.on('close')`
@@ -56,13 +56,13 @@ export class AiController {
     res.flushHeaders?.();
 
     try {
-      for await (const delta of this.aiService.streamReply(
+      for await (const event of this.aiService.streamReply(
         conversationId,
-        message,
-        userContent,
+        isNewConversation,
+        dto,
         controller.signal,
       )) {
-        res.write(JSON.stringify({ type: 'delta', text: delta }) + '\n');
+        res.write(JSON.stringify(event) + '\n');
       }
       res.write(JSON.stringify({ type: 'done' }) + '\n');
     } catch {

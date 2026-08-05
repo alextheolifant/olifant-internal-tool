@@ -1,6 +1,15 @@
 import { apiFetch } from "@/lib/api";
 
+export type CopilotStepId = "history" | "metrics" | "context" | "reasoning";
+
+export interface CopilotStep {
+  id: CopilotStepId;
+  label: string;
+  status: "running" | "complete";
+}
+
 type CopilotStreamEvent =
+  | { type: "step"; id: CopilotStepId; label: string; status: "running" | "complete" }
   | { type: "delta"; text: string }
   | { type: "done" }
   | { type: "error"; message: string };
@@ -11,6 +20,7 @@ export interface StreamCopilotMessageArgs {
   conversationId: string | undefined;
   signal?: AbortSignal;
   onDelta: (text: string) => void;
+  onStep: (step: CopilotStep) => void;
 }
 
 export async function streamCopilotMessage({
@@ -19,6 +29,7 @@ export async function streamCopilotMessage({
   conversationId,
   signal,
   onDelta,
+  onStep,
 }: StreamCopilotMessageArgs): Promise<{ conversationId: string }> {
   const res = await apiFetch("/api/ai/copilot/message", {
     method: "POST",
@@ -49,6 +60,7 @@ export async function streamCopilotMessage({
 
       const event = JSON.parse(line) as CopilotStreamEvent;
       if (event.type === "delta") onDelta(event.text);
+      else if (event.type === "step") onStep({ id: event.id, label: event.label, status: event.status });
       else if (event.type === "error") throw new Error(event.message);
     }
   }
