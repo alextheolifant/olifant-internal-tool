@@ -36,5 +36,11 @@ export interface RuleConditionResult {
 export interface RuleDefinition {
   id: string;
   band: RuleBand;
+  // Human-readable name for the Today screen's exception list, e.g. "ACOS blowout".
+  label: string;
+  // Builds the one-line human-readable description from a fired candidate's
+  // own evidence payload — kept on the rule itself (not a separate registry)
+  // so it can never drift out of sync with that rule's actual evidence shape.
+  describe: (evidence: Record<string, unknown>) => string;
   evaluate: (ctx: RuleEvalContext) => Promise<RuleConditionResult[]>;
 }

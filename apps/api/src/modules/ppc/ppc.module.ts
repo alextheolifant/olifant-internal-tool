@@ -10,6 +10,8 @@ import { CampaignMetricsRepository } from './rules/campaign-metrics.repository';
 import { RuleRunnerController } from './rules/rule-runner.controller';
 import { RuleRunnerService } from './rules/rule-runner.service';
 import { RuleStateRepository } from './rules/rule-state.repository';
+import { TodayController } from './today.controller';
+import { TodayService } from './today.service';
 
 @Module({
   imports: [MetricsModule],
@@ -18,6 +20,7 @@ import { RuleStateRepository } from './rules/rule-state.repository';
     PpcConfigController,
     ProductEconomicsController,
     RuleRunnerController,
+    TodayController,
   ],
   providers: [
     PpcClientsService,
@@ -26,6 +29,7 @@ import { RuleStateRepository } from './rules/rule-state.repository';
     CampaignMetricsRepository,
     RuleStateRepository,
     RuleRunnerService,
+    TodayService,
   ],
 })
 export class PpcModule {}

@@ -3,6 +3,7 @@ export interface DailyMetricRow {
   spend: number;
   sales: number;
   clicks: number;
+  impressions: number;
 }
 
 export interface CampaignWithDailyMetrics {
@@ -15,6 +16,7 @@ export interface WindowAggregate {
   spend: number;
   sales: number;
   clicks: number;
+  impressions: number;
   // ACOS as a percentage number (30 = 30%), matching margin/BE/targetAcos
   // everywhere else in this codebase — computed as (spend / sales) * 100
   // over the whole window, NOT an average of daily ACOS ratios (which would
@@ -26,14 +28,16 @@ export function aggregateWindow(rows: DailyMetricRow[], start: string, end: stri
   let spend = 0;
   let sales = 0;
   let clicks = 0;
+  let impressions = 0;
   for (const r of rows) {
     if (r.date >= start && r.date <= end) {
       spend += r.spend;
       sales += r.sales;
       clicks += r.clicks;
+      impressions += r.impressions;
     }
   }
-  return { spend, sales, clicks, acos: sales > 0 ? (spend / sales) * 100 : null };
+  return { spend, sales, clicks, impressions, acos: sales > 0 ? (spend / sales) * 100 : null };
 }
 
 export function addDaysISO(iso: string, days: number): string {

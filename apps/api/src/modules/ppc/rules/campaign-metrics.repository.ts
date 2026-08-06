@@ -26,6 +26,7 @@ export class CampaignMetricsRepository {
         spend: campaignMetricsDaily.spend,
         sales: campaignMetricsDaily.sales,
         clicks: campaignMetricsDaily.clicks,
+        impressions: campaignMetricsDaily.impressions,
       })
       .from(campaigns)
       .innerJoin(amazonAdsAccounts, eq(amazonAdsAccounts.id, campaigns.amazonAdsAccountId))
@@ -52,6 +53,7 @@ export class CampaignMetricsRepository {
           spend: Number(r.spend ?? 0),
           sales: Number(r.sales ?? 0),
           clicks: Number(r.clicks ?? 0),
+          impressions: Number(r.impressions ?? 0),
         });
       }
     }

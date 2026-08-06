@@ -10,6 +10,12 @@ export const RULE_THRESHOLD_DEFAULTS = {
   // D4: minimum trailing-7d spend required before a campaign is evaluated at
   // all — protects against noisy ACOS readings on near-zero spend.
   d4_min_spend: 50,
+  // D5: yesterday's impressions at or below this count as "~0" (stopped).
+  d5_near_zero_impressions: 2,
+  // D5: a prior day counts as "meaningfully serving" if impressions were at
+  // or above this — used to establish the campaign was actually delivering
+  // before, not just newly launched or always-quiet.
+  d5_meaningful_impressions: 10,
 } as const;
 
 export type RuleThresholdKey = keyof typeof RULE_THRESHOLD_DEFAULTS;
@@ -26,4 +32,12 @@ export function makeThresholdResolver(
 // Hysteresis: default clear = enter × 0.85 unless a rule states otherwise.
 export function defaultClearThreshold(enterValue: number, clearMultiplier = 0.85): number {
   return enterValue * clearMultiplier;
+}
+
+// Same default 0.85 relationship, but for a "low value is bad" metric (e.g.
+// impressions) rather than "high value is bad" (e.g. ACOS) — the clear bar
+// must be a LOOSER (higher) threshold than enter, so dividing instead of
+// multiplying keeps the same "15% buffer" intent in the correct direction.
+export function defaultClearThresholdForLowMetric(enterValue: number, clearMultiplier = 0.85): number {
+  return enterValue / clearMultiplier;
 }

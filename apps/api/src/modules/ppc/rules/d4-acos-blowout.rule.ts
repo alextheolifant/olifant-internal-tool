@@ -11,6 +11,15 @@ const REFERENCE_WINDOW_DAYS = 60; // for the settled-data click-maturity check
 export const d4AcosBlowoutRule: RuleDefinition = {
   id: 'D4',
   band: 'D',
+  label: 'ACOS blowout',
+
+  describe(evidence) {
+    const name = String(evidence.campaignName ?? 'Unnamed campaign');
+    const acos = Number(evidence.trailing7dAcos).toFixed(1);
+    const be = Number(evidence.be);
+    const multiplier = Number(evidence.multiplier);
+    return `Campaign "${name}" is running ${acos}% ACOS over the last 7 days — ${multiplier}× BE (${be}%).`;
+  },
 
   async evaluate(ctx: RuleEvalContext): Promise<RuleConditionResult[]> {
     if (ctx.be.value === null) return []; // nothing to compare against

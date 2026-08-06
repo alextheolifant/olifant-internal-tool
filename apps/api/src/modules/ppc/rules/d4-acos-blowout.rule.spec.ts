@@ -10,8 +10,8 @@ function fakeRepo(campaigns: CampaignWithDailyMetrics[]): CampaignMetricsReposit
   } as unknown as CampaignMetricsRepository;
 }
 
-function dailyRow(date: string, spend: number, sales: number, clicks = 10) {
-  return { date, spend, sales, clicks };
+function dailyRow(date: string, spend: number, sales: number, clicks = 10, impressions = 0) {
+  return { date, spend, sales, clicks, impressions };
 }
 
 describe('d4AcosBlowoutRule', () => {

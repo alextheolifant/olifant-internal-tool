@@ -29,6 +29,16 @@ const TRAILING_DAYS = 30;
 export const d1OutOfBudgetProfitableRule: RuleDefinition = {
   id: 'D1',
   band: 'D',
+  label: 'Out of budget, profitable',
+
+  // Written for whenever the gap above closes and this can actually fire —
+  // never exercised today since holdsAtEnter is always false.
+  describe(evidence) {
+    const name = String(evidence.campaignName ?? 'Unnamed campaign');
+    const acos = Number(evidence.trailing30dAcos).toFixed(1);
+    const be = Number(evidence.be);
+    return `Campaign "${name}" capped out while profitable — ${acos}% ACOS vs ${be}% BE.`;
+  },
 
   async evaluate(ctx: RuleEvalContext): Promise<RuleConditionResult[]> {
     if (ctx.be.value === null) return [];
