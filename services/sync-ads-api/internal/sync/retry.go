@@ -85,7 +85,14 @@ func (o *MetricsOrchestrator) RetryFailedReports(ctx context.Context) (*RetryRes
 			continue
 		}
 
-		reportID, err := o.apiClient.RequestReport(ctx, token, baseURL, row.ProfileID, row.StartDate, row.EndDate)
+		typeCfg, err := reportTypeConfigFor(row.ReportType)
+		if err != nil {
+			log.Printf("  account %s: %v — skipping", row.ProfileID, err)
+			result.AccountsFailed++
+			continue
+		}
+
+		reportID, err := o.apiClient.RequestReport(ctx, token, baseURL, row.ProfileID, typeCfg.ReportRequestConfig, row.StartDate, row.EndDate)
 		if err != nil {
 			log.Printf("  account %s: RequestReport error: %v — leaving as-is", row.ProfileID, err)
 			result.AccountsFailed++
@@ -95,6 +102,7 @@ func (o *MetricsOrchestrator) RetryFailedReports(ctx context.Context) (*RetryRes
 		newRetryCount := row.RetryCount + 1
 		_, err = o.writer.ReplaceWithRetry(ctx, row.ID, db.ReportRequestInsert{
 			AmazonAdsAccountID: row.AmazonAdsAccountID,
+			ReportType:         row.ReportType,
 			SyncLogID:          logID,
 			Region:             row.Region,
 			ReportID:           reportID,

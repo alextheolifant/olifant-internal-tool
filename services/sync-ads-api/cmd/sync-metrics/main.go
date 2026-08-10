@@ -1,12 +1,14 @@
-// Command sync-metrics pulls daily SP campaign performance data from Amazon's
-// Reporting API v3 for every active ads account and writes it into PostgreSQL
-// and ClickHouse. It uses a two-phase batch approach persisted via
-// ads_report_requests so the sync can resume cleanly after a restart.
+// Command sync-metrics pulls daily Sponsored Products report data from
+// Amazon's Reporting API v3 for every active ads account and writes it into
+// PostgreSQL (and, for the campaigns report, ClickHouse). It uses a two-phase
+// batch approach persisted via ads_report_requests so the sync can resume
+// cleanly after a restart.
 //
 // Usage:
 //
-//	sync-metrics                          # defaults: last 30 days
-//	sync-metrics -start 2024-01-01 -end 2024-01-31
+//	sync-metrics                                    # defaults: campaigns report, last 30 days
+//	sync-metrics -report searchTerm -start 2024-01-01 -end 2024-01-31
+//	sync-metrics -report targeting
 package main
 
 import (
@@ -29,9 +31,10 @@ func main() {
 	defaultStart := time.Now().UTC().AddDate(0, 0, -30).Format("2006-01-02")
 	startDate := flag.String("start", defaultStart, "report start date YYYY-MM-DD")
 	endDate := flag.String("end", today, "report end date YYYY-MM-DD")
+	reportType := flag.String("report", "campaigns", "report type: campaigns | searchTerm | targeting")
 	flag.Parse()
 
-	log.Printf("sync-metrics: range %s → %s", *startDate, *endDate)
+	log.Printf("sync-metrics: report=%s range %s → %s", *reportType, *startDate, *endDate)
 
 	clientID := requireEnv("ADS_CLIENT_ID")
 	clientSecret := requireEnv("ADS_CLIENT_SECRET")
@@ -55,7 +58,7 @@ func main() {
 	log.Printf("found %d active accounts", len(accounts))
 
 	orchestrator := sync.NewMetricsOrchestrator(clientID, clientSecret, encryptionKey, writer, chWriter)
-	result, err := orchestrator.SyncMetrics(ctx, accounts, *startDate, *endDate)
+	result, err := orchestrator.SyncMetrics(ctx, accounts, *reportType, *startDate, *endDate)
 	if err != nil {
 		log.Fatalf("sync failed: %v", err)
 	}

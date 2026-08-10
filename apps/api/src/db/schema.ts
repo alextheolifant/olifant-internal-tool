@@ -37,6 +37,8 @@ export const syncTypeEnum = pgEnum('sync_type', [
   'ads_profiles',
   'anomaly_detection',
   'catalog_items',
+  'ads_search_term',
+  'ads_targeting',
 ]);
 
 export const syncStatusEnum = pgEnum('sync_status', [
@@ -422,6 +424,11 @@ export const adsReportRequests = pgTable(
     syncLogId: uuid('sync_log_id').references(() => syncLogs.id, {
       onDelete: 'set null',
     }),
+    // Internal report-family key ('campaigns' | 'searchTerm' | 'targeting',
+    // ...) — NOT Amazon's own reportTypeId, so our storage stays stable even
+    // if Amazon renames theirs. Defaults 'campaigns' so pre-existing rows
+    // (from before report types were parameterized) stay correctly attributed.
+    reportType: varchar('report_type', { length: 20 }).notNull().default('campaigns'),
     region: varchar('region', { length: 3 }).notNull(),
     reportId: varchar('report_id', { length: 255 }).notNull(),
     startDate: date('start_date').notNull(),
@@ -439,7 +446,89 @@ export const adsReportRequests = pgTable(
     index('idx_report_req_status').on(t.status),
     index('idx_report_req_account').on(t.amazonAdsAccountId),
     // Partial unique index (WHERE status IN ('PENDING','PROCESSING')) is added
-    // manually in the migration — Drizzle doesn't support partial index WHERE clauses.
+    // manually in the migration — Drizzle doesn't support partial index WHERE
+    // clauses. It's keyed on (account, report_type, start_date, end_date) so
+    // an in-flight campaigns report never blocks submitting a search-term
+    // report for the same account/date range.
+  ],
+);
+
+// Search terms are high-cardinality (one row per term/keyword/campaign/ad
+// group/date) — no FK to campaigns.id, campaign_id/ad_group_id are stored as
+// raw Amazon ids, matching how ads_report_requests itself stores them.
+export const searchTermMetricsDaily = pgTable(
+  'search_term_metrics_daily',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    amazonAdsAccountId: uuid('amazon_ads_account_id')
+      .notNull()
+      .references(() => amazonAdsAccounts.id, { onDelete: 'cascade' }),
+    date: date('date').notNull(),
+    searchTerm: text('search_term').notNull(),
+    keywordId: varchar('keyword_id', { length: 64 }),
+    campaignId: varchar('campaign_id', { length: 64 }).notNull(),
+    adGroupId: varchar('ad_group_id', { length: 64 }).notNull(),
+    matchType: varchar('match_type', { length: 32 }),
+    impressions: integer('impressions').notNull().default(0),
+    clicks: integer('clicks').notNull().default(0),
+    cost: numeric('cost', { precision: 12, scale: 4 }).notNull().default('0'),
+    sales7d: numeric('sales_7d', { precision: 12, scale: 4 }).notNull().default('0'),
+    sales14d: numeric('sales_14d', { precision: 12, scale: 4 }).notNull().default('0'),
+    orders7d: integer('orders_7d').notNull().default(0),
+    orders14d: integer('orders_14d').notNull().default(0),
+    units7d: integer('units_7d').notNull().default(0),
+    units14d: integer('units_14d').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // NULLs in a unique index are never considered equal to each other in
+    // Postgres, so rows with no keyword_id (auto/product-targeting search
+    // terms) are not deduped against each other by this constraint alone —
+    // the upsert additionally coalesces keyword_id to '' before the ON
+    // CONFLICT match so those rows still overwrite correctly.
+    uniqueIndex('uq_search_term_metrics').on(
+      t.amazonAdsAccountId,
+      t.date,
+      t.searchTerm,
+      t.keywordId,
+      t.campaignId,
+      t.adGroupId,
+    ),
+    index('idx_search_term_metrics_date').on(t.date),
+    index('idx_search_term_metrics_account').on(t.amazonAdsAccountId),
+  ],
+);
+
+export const targetMetricsDaily = pgTable(
+  'target_metrics_daily',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    amazonAdsAccountId: uuid('amazon_ads_account_id')
+      .notNull()
+      .references(() => amazonAdsAccounts.id, { onDelete: 'cascade' }),
+    date: date('date').notNull(),
+    targetId: varchar('target_id', { length: 64 }).notNull(),
+    expression: text('expression').notNull(),
+    matchType: varchar('match_type', { length: 32 }),
+    campaignId: varchar('campaign_id', { length: 64 }).notNull(),
+    adGroupId: varchar('ad_group_id', { length: 64 }).notNull(),
+    impressions: integer('impressions').notNull().default(0),
+    clicks: integer('clicks').notNull().default(0),
+    cost: numeric('cost', { precision: 12, scale: 4 }).notNull().default('0'),
+    sales7d: numeric('sales_7d', { precision: 12, scale: 4 }).notNull().default('0'),
+    sales14d: numeric('sales_14d', { precision: 12, scale: 4 }).notNull().default('0'),
+    orders7d: integer('orders_7d').notNull().default(0),
+    orders14d: integer('orders_14d').notNull().default(0),
+    units7d: integer('units_7d').notNull().default(0),
+    units14d: integer('units_14d').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('uq_target_metrics').on(t.amazonAdsAccountId, t.date, t.targetId),
+    index('idx_target_metrics_date').on(t.date),
+    index('idx_target_metrics_account').on(t.amazonAdsAccountId),
   ],
 );
 
