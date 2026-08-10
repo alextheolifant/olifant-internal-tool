@@ -27,7 +27,7 @@ function actionLabelForRule(ruleId: string): string {
 export function TodayView() {
   const { clientId } = usePpcClientFilter();
   const { data, isLoading, isRefetching, error, retry } = usePpcToday(clientId);
-  const { isStale } = usePpcDataFreshness();
+  const { isStale, isAgeStale, hasRecentFailures } = usePpcDataFreshness();
 
   if (error) {
     return (
@@ -74,8 +74,11 @@ export function TodayView() {
     <div className={`px-5 py-5 ${isRefetching ? "opacity-60 transition-opacity" : ""}`}>
       {isStale && (
         <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-[12px] text-amber-800">
-          Data is more than 48 hours old — exceptions below may be out of date. Treat as unverified until the sync
-          catches up.
+          {hasRecentFailures
+            ? "A recent sync failed — exceptions below may be based on incomplete data until it's resolved."
+            : isAgeStale
+              ? "Data is more than 48 hours old — exceptions below may be out of date. Treat as unverified until the sync catches up."
+              : "Sync status is unavailable — exceptions below may be out of date."}
         </div>
       )}
 

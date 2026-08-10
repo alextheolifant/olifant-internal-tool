@@ -22,14 +22,16 @@ export function usePpcBadgeCounts(): PpcBadgeCounts {
 
 export interface PpcSyncStatus {
   label: string;
-  isStale: boolean; // true when the most-stale relevant sync is >48h old
+  isStale: boolean; // true when the chip should render as a warning — age OR failures
+  isAgeStale: boolean; // true specifically when the last sync itself is >48h old
+  hasRecentFailures: boolean; // true when a sync has failed within the last 24h
 }
 
 // TODO: wire to sync_logs / the observability layer's health data once it's
 // queryable. Until then this is a stub so the sidebar footer has something
 // stable to render.
 export function usePpcSyncStatus(): PpcSyncStatus {
-  return { label: "Last synced: —", isStale: false };
+  return { label: "Last synced: —", isStale: false, isAgeStale: false, hasRecentFailures: false };
 }
 
 function formatSyncDate(iso: string): string {
@@ -55,18 +57,25 @@ export function usePpcDataFreshness(): PpcSyncStatus {
     return () => controller.abort();
   }, []);
 
-  if (failed) return { label: "● sync status unavailable", isStale: true };
-  if (!freshness || !freshness.lastSyncedAt) return { label: "● no sync data yet", isStale: true };
+  if (failed) {
+    return { label: "● sync status unavailable", isStale: true, isAgeStale: false, hasRecentFailures: false };
+  }
+  if (!freshness || !freshness.lastSyncedAt) {
+    return { label: "● no sync data yet", isStale: true, isAgeStale: true, hasRecentFailures: false };
+  }
 
-  const isStale = freshness.level === "act_now" || freshness.hasRecentFailures;
+  const isAgeStale = freshness.level === "act_now";
+  const isStale = isAgeStale || freshness.hasRecentFailures;
   const statusPhrase = freshness.hasRecentFailures
     ? "sync issues detected"
-    : freshness.level === "act_now"
+    : isAgeStale
       ? "sync overdue"
       : "all reports reconciled";
 
   return {
     label: `● data through ${formatSyncDate(freshness.lastSyncedAt)} · ${statusPhrase}`,
     isStale,
+    isAgeStale,
+    hasRecentFailures: freshness.hasRecentFailures,
   };
 }
