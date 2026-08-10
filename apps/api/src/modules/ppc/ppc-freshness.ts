@@ -10,8 +10,8 @@ export interface ClientFreshness {
   level: FreshnessLevel;
 }
 
-const FRESH_HOURS = 24;
-const STALE_HOURS = 48;
+export const FRESH_HOURS = 24;
+export const STALE_HOURS = 48;
 
 export function classifyFreshness(lastSyncedAt: Date | null): ClientFreshness {
   if (!lastSyncedAt) return { lastSyncedAt: null, level: 'unknown' };

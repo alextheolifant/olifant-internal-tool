@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { DrizzleService } from '../../db/drizzle.service';
 import { RedisService } from '../../db/redis.service';
 import {
@@ -11,7 +11,17 @@ import {
 } from '../../db/schema';
 import { MetricsService } from '../metrics/metrics.service';
 import { computePpcConfigCompleteness, type ProductEconomicsCheck } from './ppc-completeness';
-import { classifyFreshness, type ClientFreshness } from './ppc-freshness';
+import { classifyFreshness, FRESH_HOURS, type ClientFreshness, type FreshnessLevel } from './ppc-freshness';
+
+export interface PpcGlobalFreshness {
+  lastSyncedAt: string | null;
+  level: FreshnessLevel;
+  // Any sync_logs row with status='failed' started within the last
+  // FRESH_HOURS — surfaced separately from "level" since a client can be
+  // freshness-wise "on_target" (something completed recently) while a
+  // different sync type is actively failing.
+  hasRecentFailures: boolean;
+}
 
 export interface PpcClientRow {
   id: string;
@@ -162,6 +172,31 @@ export class PpcClientsService {
       byClient.set(r.clientId, list);
     }
     return byClient;
+  }
+
+  // Engine-wide freshness for the PPC top bar's chip — deliberately NOT
+  // scoped to the selected client filter, since it's meant to answer "is our
+  // data current" as a system-health signal, not a per-client stat. Reuses
+  // the exact same "any completedAt, regardless of status" convention as
+  // fetchFreshness below, for consistency between the two freshness surfaces.
+  async getGlobalFreshness(): Promise<PpcGlobalFreshness> {
+    const [{ lastSyncedAt: rawLastSyncedAt }] = await this.drizzle.db
+      .select({ lastSyncedAt: sql<string | null>`MAX(${syncLogs.completedAt})` })
+      .from(syncLogs);
+    const lastSyncedAt = rawLastSyncedAt ? new Date(rawLastSyncedAt) : null;
+
+    const failureWindowStart = new Date(Date.now() - FRESH_HOURS * 60 * 60 * 1000);
+    const [{ failureCount }] = await this.drizzle.db
+      .select({ failureCount: sql<number>`COUNT(*)::int` })
+      .from(syncLogs)
+      .where(and(eq(syncLogs.status, 'failed'), gte(syncLogs.startedAt, failureWindowStart)));
+
+    const { level } = classifyFreshness(lastSyncedAt);
+    return {
+      lastSyncedAt: lastSyncedAt ? lastSyncedAt.toISOString() : null,
+      level,
+      hasRecentFailures: failureCount > 0,
+    };
   }
 
   // Latest successful sync per client, across both the Ads API and SP-API

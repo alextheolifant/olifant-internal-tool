@@ -15,4 +15,9 @@ export class PpcClientsController {
   ) {
     return this.ppcClientsService.getClients(from, to, marketplace);
   }
+
+  @Get('freshness')
+  freshness() {
+    return this.ppcClientsService.getGlobalFreshness();
+  }
 }

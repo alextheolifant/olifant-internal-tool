@@ -1,7 +1,12 @@
+"use client";
+
 // ─── PPC Engine status stubs ──────────────────────────────────────────────────
 // The exceptions/tasks/ideas tables don't exist yet (later phases). These hooks
 // give the shell (sidebar badges, top bar freshness chip) a stable shape to
 // render against now, so screens don't need to change when the real data lands.
+
+import { useEffect, useState } from "react";
+import { fetchPpcFreshness, type PpcGlobalFreshness } from "../ppc/_lib/ppc-clients-api";
 
 export interface PpcBadgeCounts {
   today: number; // open/unresolved exceptions
@@ -27,10 +32,41 @@ export function usePpcSyncStatus(): PpcSyncStatus {
   return { label: "Last synced: —", isStale: false };
 }
 
-// TODO: wire to sync_logs / the observability layer's health data once it's
-// queryable. Backs the PPC top bar's data-freshness chip specifically —
-// separate from usePpcSyncStatus() because the chip reports on data
-// completeness/reconciliation, not just when the last sync ran.
+function formatSyncDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+// Backs the PPC top bar's data-freshness chip. Reports on engine-wide sync
+// health (last completed sync + whether anything's failing recently), not
+// scoped to whatever client filter is selected — same rationale as the
+// backend's getGlobalFreshness().
 export function usePpcDataFreshness(): PpcSyncStatus {
-  return { label: "● data through Jul 25 · all reports reconciled", isStale: false };
+  const [freshness, setFreshness] = useState<PpcGlobalFreshness | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchPpcFreshness(controller.signal)
+      .then(setFreshness)
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setFailed(true);
+      });
+    return () => controller.abort();
+  }, []);
+
+  if (failed) return { label: "● sync status unavailable", isStale: true };
+  if (!freshness || !freshness.lastSyncedAt) return { label: "● no sync data yet", isStale: true };
+
+  const isStale = freshness.level === "act_now" || freshness.hasRecentFailures;
+  const statusPhrase = freshness.hasRecentFailures
+    ? "sync issues detected"
+    : freshness.level === "act_now"
+      ? "sync overdue"
+      : "all reports reconciled";
+
+  return {
+    label: `● data through ${formatSyncDate(freshness.lastSyncedAt)} · ${statusPhrase}`,
+    isStale,
+  };
 }

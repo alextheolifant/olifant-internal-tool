@@ -52,3 +52,15 @@ export async function fetchPpcClients(
   const data: { clients: PpcClientRow[] } = await res.json();
   return data.clients;
 }
+
+export interface PpcGlobalFreshness {
+  lastSyncedAt: string | null;
+  level: Health;
+  hasRecentFailures: boolean;
+}
+
+export async function fetchPpcFreshness(signal?: AbortSignal): Promise<PpcGlobalFreshness> {
+  const res = await apiFetch(`/api/ppc/clients/freshness`, { cache: "no-store", signal });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
