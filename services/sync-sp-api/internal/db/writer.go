@@ -118,6 +118,7 @@ func (w *Writer) CompleteSyncFailure(ctx context.Context, logID string, recordsS
 // ReportRequestInsert holds the values for a new sp_report_requests row.
 type ReportRequestInsert struct {
 	AmazonSPAccountID string
+	SyncLogID         string
 	Region            string
 	ReportID          string
 	StartDate         string
@@ -129,10 +130,10 @@ func (w *Writer) InsertReportRequest(ctx context.Context, r ReportRequestInsert)
 	var id string
 	err := w.pool.QueryRow(ctx, `
 		INSERT INTO sp_report_requests
-			(amazon_sp_account_id, region, report_id, start_date, end_date, status)
-		VALUES ($1, $2, $3, $4, $5, 'IN_QUEUE')
+			(amazon_sp_account_id, sync_log_id, region, report_id, start_date, end_date, status)
+		VALUES ($1, $2, $3, $4, $5, $6, 'IN_QUEUE')
 		RETURNING id`,
-		r.AmazonSPAccountID, r.Region, r.ReportID, r.StartDate, r.EndDate,
+		r.AmazonSPAccountID, r.SyncLogID, r.Region, r.ReportID, r.StartDate, r.EndDate,
 	).Scan(&id)
 	if err != nil {
 		return "", fmt.Errorf("insert report request: %w", err)
@@ -170,13 +171,14 @@ type PendingReportRequest struct {
 	ReportID          string
 	StartDate         string
 	EndDate           string
+	SyncLogID         string // "" if this row predates the sync_log_id column
 }
 
 // GetPendingReportRequests reads all non-terminal rows from sp_report_requests.
 func (w *Writer) GetPendingReportRequests(ctx context.Context) ([]PendingReportRequest, error) {
 	rows, err := w.pool.Query(ctx, `
 		SELECT r.id, r.amazon_sp_account_id, r.region, a.marketplace,
-		       r.report_id, r.start_date::text, r.end_date::text
+		       r.report_id, COALESCE(r.sync_log_id::text, ''), r.start_date::text, r.end_date::text
 		FROM sp_report_requests r
 		JOIN amazon_sp_accounts a ON a.id = r.amazon_sp_account_id
 		WHERE r.status IN ('IN_QUEUE', 'IN_PROGRESS')
@@ -191,7 +193,7 @@ func (w *Writer) GetPendingReportRequests(ctx context.Context) ([]PendingReportR
 	for rows.Next() {
 		var p PendingReportRequest
 		if err := rows.Scan(&p.ID, &p.AmazonSPAccountID, &p.Region, &p.Marketplace,
-			&p.ReportID, &p.StartDate, &p.EndDate); err != nil {
+			&p.ReportID, &p.SyncLogID, &p.StartDate, &p.EndDate); err != nil {
 			return nil, fmt.Errorf("scan pending row: %w", err)
 		}
 		result = append(result, p)
@@ -246,18 +248,45 @@ func (w *Writer) DeleteReportRequest(ctx context.Context, id string) error {
 	return nil
 }
 
-// MarkTimedOutReportRequests sets FATAL on any rows still pending after the deadline.
+// MarkTimedOutReportRequests sets FATAL on any rows still pending after the
+// deadline, and fails their linked sync_logs rows too — otherwise a report
+// that never reaches a terminal Amazon status (e.g. because every poll on it
+// 401s) leaves sync_logs stuck at 'running' forever.
 func (w *Writer) MarkTimedOutReportRequests(ctx context.Context, before time.Time) (int, error) {
-	tag, err := w.pool.Exec(ctx, `
+	rows, err := w.pool.Query(ctx, `
 		UPDATE sp_report_requests
 		SET status = 'FATAL', error_message = 'max wait exceeded', last_checked_at = now()
-		WHERE status IN ('IN_QUEUE', 'IN_PROGRESS') AND requested_at < $1`,
+		WHERE status IN ('IN_QUEUE', 'IN_PROGRESS') AND requested_at < $1
+		RETURNING sync_log_id`,
 		before,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("mark timed out: %w", err)
 	}
-	return int(tag.RowsAffected()), nil
+
+	count := 0
+	var syncLogIDs []string
+	for rows.Next() {
+		var syncLogID *string
+		if err := rows.Scan(&syncLogID); err != nil {
+			rows.Close()
+			return count, fmt.Errorf("scan timed out row: %w", err)
+		}
+		count++
+		if syncLogID != nil {
+			syncLogIDs = append(syncLogIDs, *syncLogID)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return count, fmt.Errorf("mark timed out: %w", err)
+	}
+
+	for _, id := range syncLogIDs {
+		_ = w.CompleteSyncFailure(ctx, id, 0, "max wait exceeded")
+	}
+
+	return count, nil
 }
 
 // ── Sales upsert (sp_sales_daily) ──────────────────────────────────────────────

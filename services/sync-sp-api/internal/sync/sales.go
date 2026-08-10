@@ -145,6 +145,7 @@ func (o *SalesOrchestrator) SyncSales(ctx context.Context, accounts []db.SpAccou
 
 			if _, err := o.writer.InsertReportRequest(ctx, db.ReportRequestInsert{
 				AmazonSPAccountID: a.ID,
+				SyncLogID:         logID,
 				Region:            a.Region,
 				ReportID:          reportID,
 				StartDate:         startDate,
@@ -243,15 +244,24 @@ func (o *SalesOrchestrator) pollPendingReports(ctx context.Context, deadline tim
 					written, err := o.processCompleted(ctx, ac, r, status.ReportDocumentID)
 					if err != nil {
 						_ = o.writer.MarkReportTerminal(ctx, r.ID, "FATAL", err.Error())
+						if r.SyncLogID != "" {
+							_ = o.writer.CompleteSyncFailure(ctx, r.SyncLogID, 0, err.Error())
+						}
 						pr.err = err
 					} else {
 						_ = o.writer.DeleteReportRequest(ctx, r.ID)
+						if r.SyncLogID != "" {
+							_ = o.writer.CompleteSyncSuccess(ctx, r.SyncLogID, written)
+						}
 						pr.written = written
 						pr.completed = true
 					}
 
 				case "FATAL", "CANCELLED":
 					_ = o.writer.MarkReportTerminal(ctx, r.ID, status.ProcessingStatus, status.ProcessingStatus)
+					if r.SyncLogID != "" {
+						_ = o.writer.CompleteSyncFailure(ctx, r.SyncLogID, 0, status.ProcessingStatus)
+					}
 					pr.err = fmt.Errorf("report %s: %s", r.ReportID, status.ProcessingStatus)
 
 				default: // IN_QUEUE / IN_PROGRESS

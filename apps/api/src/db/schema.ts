@@ -450,6 +450,11 @@ export const spReportRequests = pgTable(
     amazonSpAccountId: uuid('amazon_sp_account_id')
       .notNull()
       .references(() => amazonSpAccounts.id, { onDelete: 'cascade' }),
+    // Links back to the sync_logs row created when this report was
+    // submitted, so Phase 2 polling can mark it success/failed on
+    // completion — without this, sync_logs stays 'running' forever
+    // regardless of how the report request resolves.
+    syncLogId: uuid('sync_log_id').references(() => syncLogs.id, { onDelete: 'set null' }),
     region: varchar('region', { length: 3 }).notNull(),
     reportId: varchar('report_id', { length: 255 }).notNull(),
     reportDocumentId: varchar('report_document_id', { length: 255 }),

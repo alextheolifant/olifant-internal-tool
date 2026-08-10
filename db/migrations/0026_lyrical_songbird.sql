@@ -1,0 +1,2 @@
+ALTER TABLE "sp_report_requests" ADD COLUMN "sync_log_id" uuid;--> statement-breakpoint
+ALTER TABLE "sp_report_requests" ADD CONSTRAINT "sp_report_requests_sync_log_id_sync_logs_id_fk" FOREIGN KEY ("sync_log_id") REFERENCES "public"."sync_logs"("id") ON DELETE set null ON UPDATE no action;
