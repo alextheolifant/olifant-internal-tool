@@ -8,8 +8,10 @@ import type { RuleDefinition } from './rules/types';
 // Same convention apps/web/app/dashboard/_lib/theme.ts's healthTokens uses —
 // not redefined here, just the same four string values, so the frontend can
 // index straight into its existing healthTokens[guardColor] with no new
-// mapping logic. D-band candidates are always 'act_now' today; the other
-// values exist for when W/S-band rules are registered.
+// mapping logic. D-band candidates are 'act_now' (red); G-band guards are
+// 'watch' (amber) — though the frontend's RuleChip actually overrides G-rule
+// chip color to the distinct yellow "pending" family regardless of this
+// value, so this mainly keeps the field itself semantically honest.
 export type GuardColor = 'on_target' | 'watch' | 'act_now' | 'unknown';
 
 export interface TodayException {
@@ -32,7 +34,10 @@ export interface TodayResponse {
     openTasksCount: number;
     // Needs task-level impact scoring (task layer) — explicitly unavailable.
     dollarsAtStake: null;
-    // Real: count of D-band candidates emitted for evaluationDate.
+    // Real: count of D-band candidates emitted for evaluationDate. G-band
+    // guards are NOT counted here — they're ongoing protective state, not
+    // one-off "something broke today" alerts — but they DO appear in the
+    // exceptions list below, alongside D-candidates, with a distinct color.
     exceptionsToday: number;
   };
   exceptions: TodayException[];
@@ -72,9 +77,14 @@ export class TodayService {
       .where(and(...conditions));
 
     const exceptions: TodayException[] = [];
+    let dBandCount = 0;
     for (const row of rows) {
       const rule = rulesById.get(row.ruleId);
-      if (!rule || rule.band !== 'D') continue; // Today's "exceptions" are D-band only, per spec
+      // The Today screen shows D-band exceptions and G-band guards together
+      // (guards use a distinct chip color on the frontend) — everything else
+      // (W/S/M/I bands, once they exist) belongs on the weekly queue instead.
+      if (!rule || (rule.band !== 'D' && rule.band !== 'G')) continue;
+      if (rule.band === 'D') dBandCount++;
 
       const evidence = row.evidence as Record<string, unknown>;
       exceptions.push({
@@ -84,7 +94,7 @@ export class TodayService {
         clientName: row.clientName,
         description: rule.describe(evidence),
         evidence,
-        guardColor: 'act_now',
+        guardColor: rule.band === 'G' ? 'watch' : 'act_now',
       });
     }
 
@@ -94,7 +104,7 @@ export class TodayService {
         verifiedSavings: null,
         openTasksCount: rows.length,
         dollarsAtStake: null,
-        exceptionsToday: exceptions.length,
+        exceptionsToday: dBandCount,
       },
       exceptions,
     };
