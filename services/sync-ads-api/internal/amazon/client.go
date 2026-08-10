@@ -93,6 +93,19 @@ type retryableError struct{ err error }
 func (e *retryableError) Error() string { return e.err.Error() }
 func (e *retryableError) Unwrap() error { return e.err }
 
+// StatusError wraps a non-retryable HTTP error response, carrying the status
+// code so callers can distinguish specific cases (e.g. a 401 meaning the
+// connected credential lacks access to this profile) from generic failures,
+// instead of string-matching the error message.
+type StatusError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("status %d: %s", e.StatusCode, e.Body)
+}
+
 // withRetry calls fn up to maxRetries+1 times, backing off exponentially
 // (500ms, 1s, 2s) between attempts. Only errors wrapped as *retryableError
 // trigger a retry; any other error returns immediately.

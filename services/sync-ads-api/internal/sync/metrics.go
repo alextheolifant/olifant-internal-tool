@@ -3,9 +3,11 @@ package sync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +16,16 @@ import (
 	"olifant/sync-ads-api/internal/amazon"
 	"olifant/sync-ads-api/internal/db"
 )
+
+// isUnauthorized reports whether err is a 401 from Amazon — the connected
+// credential/manager account doesn't have rights to this profile, as opposed
+// to a transient or bug-class failure. Distinguishing it lets callers mark
+// sync_logs 'unauthorized' instead of 'failed': retrying won't help, and it
+// shouldn't count toward failure alerting the same way a real fault does.
+func isUnauthorized(err error) bool {
+	var statusErr *amazon.StatusError
+	return errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusUnauthorized
+}
 
 // maxNumeric84 is the largest magnitude campaign_metrics_daily's acos/roas
 // columns (numeric(8,4)) can hold — 8 total digits, 4 after the decimal.
@@ -194,7 +206,11 @@ func (o *MetricsOrchestrator) SyncMetrics(
 			// Submit the report request to Amazon
 			reportID, err := o.apiClient.RequestReport(ctx, token, baseURL, a.ProfileID, startDate, endDate)
 			if err != nil {
-				_ = o.writer.CompleteSyncFailure(ctx, logID, 0, err.Error())
+				if isUnauthorized(err) {
+					_ = o.writer.CompleteSyncUnauthorized(ctx, logID, 0, err.Error())
+				} else {
+					_ = o.writer.CompleteSyncFailure(ctx, logID, 0, err.Error())
+				}
 				out.err = fmt.Errorf("request report: %w", err)
 				outCh <- out
 				return
@@ -451,8 +467,8 @@ func (o *MetricsOrchestrator) processCompleted(
 			Orders:       purchases,
 			ACoS:         nullIfOverflowsNumeric84(acos),
 			ROAS:         nullIfOverflowsNumeric84(roas),
-			CPC:          cpc,
-			CTR:          ctr,
+			CPC:          nullIfOverflowsNumeric84(cpc),
+			CTR:          nullIfOverflowsNumeric84(ctr),
 		}); err != nil {
 			// Log and continue, not abort — one pathological campaign (e.g.
 			// near-zero sales against real spend, an extreme but real ratio)

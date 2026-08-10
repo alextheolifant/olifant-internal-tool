@@ -44,6 +44,11 @@ export const syncStatusEnum = pgEnum('sync_status', [
   'running',
   'success',
   'failed',
+  // Amazon rejected the request with a 401 — the connected credential/manager
+  // account doesn't have rights to this profile. Distinct from 'failed'
+  // because retrying won't help (this isn't a transient/bug-class error) and
+  // it shouldn't count toward failure alerting the same way a real fault does.
+  'unauthorized',
 ]);
 
 export const copilotMessageRoleEnum = pgEnum('copilot_message_role', [

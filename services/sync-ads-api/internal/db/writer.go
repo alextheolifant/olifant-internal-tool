@@ -164,6 +164,21 @@ func (w *Writer) CompleteSyncFailure(ctx context.Context, logID string, recordsS
 	return nil
 }
 
+// CompleteSyncUnauthorized marks a sync as 'unauthorized' rather than
+// 'failed' — Amazon rejected the request with a 401 because the connected
+// credential/manager account doesn't have rights to this profile. Retrying
+// won't fix it, and it shouldn't be counted the same way a real fault is.
+func (w *Writer) CompleteSyncUnauthorized(ctx context.Context, logID string, recordsSynced int, errMsg string) error {
+	_, err := w.pool.Exec(ctx,
+		`UPDATE sync_logs SET status = 'unauthorized', completed_at = now(), records_synced = $2, error_message = $3 WHERE id = $1`,
+		logID, recordsSynced, errMsg,
+	)
+	if err != nil {
+		return fmt.Errorf("complete sync unauthorized: %w", err)
+	}
+	return nil
+}
+
 // CreateAccountSyncLog creates a sync_log entry scoped to one ads account.
 func (w *Writer) CreateAccountSyncLog(ctx context.Context, syncType, accountID string) (string, error) {
 	var id string
@@ -597,16 +612,20 @@ type MetricUpsert struct {
 	Spend        float64
 	Sales        float64
 	Orders       int64
-	// ACoS/ROAS are pointers, not plain float64: campaign_metrics_daily
-	// stores them as numeric(8,4) (max magnitude ~9999.9999), but they're
+	// ACoS/ROAS/CPC/CTR are pointers, not plain float64: campaign_metrics_daily
+	// stores all four as numeric(8,4) (max magnitude ~9999.9999). ACoS/ROAS are
 	// computed locally as unbounded ratios (cost/sales, sales/cost) — a
 	// campaign with near-zero sales relative to spend (or vice versa) can
-	// easily exceed that. nil means "not a meaningful/storable ratio for
-	// this row", not zero.
+	// easily exceed that. CPC/CTR come straight from Amazon (costPerClick,
+	// clickThroughRate) and aren't bounded either — a currency/scale anomaly
+	// on Amazon's side can overflow them too, and an overflow on any one of
+	// these four previously failed the whole row's insert, silently dropping
+	// otherwise-valid impressions/clicks/spend/sales for that campaign/date.
+	// nil means "not a meaningful/storable value for this row", not zero.
 	ACoS *float64
 	ROAS *float64
-	CPC  float64
-	CTR  float64
+	CPC  *float64
+	CTR  *float64
 }
 
 // UpsertMetric inserts or updates one row in campaign_metrics_daily.

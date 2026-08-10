@@ -101,7 +101,7 @@ func (c *Client) RequestReport(ctx context.Context, accessToken, baseURL, profil
 			return nil, &retryableError{fmt.Errorf("status %d: %s", httpResp.StatusCode, b)}
 		}
 		if httpResp.StatusCode != http.StatusOK && httpResp.StatusCode != 202 {
-			return nil, fmt.Errorf("status %d: %s", httpResp.StatusCode, b)
+			return nil, &StatusError{StatusCode: httpResp.StatusCode, Body: string(b)}
 		}
 		var r ReportResponse
 		if err := json.Unmarshal(b, &r); err != nil {
@@ -138,7 +138,7 @@ func (c *Client) GetReportStatus(ctx context.Context, accessToken, baseURL, prof
 			return nil, &retryableError{fmt.Errorf("status %d: %s", httpResp.StatusCode, b)}
 		}
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("status %d: %s", httpResp.StatusCode, b)
+			return nil, &StatusError{StatusCode: httpResp.StatusCode, Body: string(b)}
 		}
 		var r ReportResponse
 		if err := json.Unmarshal(b, &r); err != nil {
