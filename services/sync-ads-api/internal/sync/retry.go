@@ -87,6 +87,17 @@ func (o *MetricsOrchestrator) RetryFailedReports(ctx context.Context) (*RetryRes
 
 		reportID, err := o.apiClient.RequestReport(ctx, token, baseURL, row.ProfileID, row.StartDate, row.EndDate)
 		if err != nil {
+			if isUnauthorized(err) {
+				// A 401 means the connected credential doesn't have rights to
+				// this profile — that isn't going to change between now and
+				// the next retry attempt. Escalate immediately instead of
+				// burning through the retry cap re-hitting the same 401.
+				reason := fmt.Sprintf("unauthorized: %v", err)
+				log.Printf("  account %s: %s — marking FAILED_PERMANENT (retrying won't help)", row.ProfileID, reason)
+				_ = o.writer.MarkReportPermanentFailure(ctx, row.ID, reason)
+				result.PermanentFailed++
+				continue
+			}
 			log.Printf("  account %s: RequestReport error: %v — leaving as-is", row.ProfileID, err)
 			result.AccountsFailed++
 			continue

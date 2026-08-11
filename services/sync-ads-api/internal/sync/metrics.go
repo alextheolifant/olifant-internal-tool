@@ -322,6 +322,22 @@ func (o *MetricsOrchestrator) pollPendingReports(ctx context.Context, deadline t
 
 				status, err := o.apiClient.GetReportStatus(ctx, token, baseURL, r.ProfileID, r.ReportID)
 				if err != nil {
+					if isUnauthorized(err) {
+						// Fail fast instead of re-polling the same doomed
+						// request every 5 min until the 16-min deadline: the
+						// credential's lack of access to this profile won't
+						// change between now and the next round. UNAUTHORIZED
+						// is excluded from FetchRetryableReportRequests's
+						// WHERE clause, so retry-reports won't pick this row
+						// up again either.
+						_ = o.writer.MarkReportTerminal(ctx, r.ID, "UNAUTHORIZED", err.Error())
+						if r.SyncLogID != "" {
+							_ = o.writer.CompleteSyncUnauthorized(ctx, r.SyncLogID, 0, err.Error())
+						}
+						pr.err = err
+						pollCh <- pr
+						return
+					}
 					pr.err = fmt.Errorf("poll status: %w", err)
 					pollCh <- pr
 					return
