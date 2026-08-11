@@ -68,6 +68,12 @@ export const d1OutOfBudgetProfitableRule: RuleDefinition = {
         holdsAtClear: cappedYesterday && isProfitable,
         evidence: {
           campaignName: c.campaignName,
+          // The campaign's currently-synced daily budget — real data (from
+          // campaigns.budget), surfaced here so the task layer's suggested
+          // budget increase has something real to compute from whenever the
+          // gate above closes. Not itself the missing signal — that's still
+          // budgetCappedSignal below.
+          currentBudget: c.budget ?? null,
           trailing30dAcos: trailing.acos,
           trailing30dSpend: trailing.spend,
           be: ctx.be.value,

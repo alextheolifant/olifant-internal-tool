@@ -22,6 +22,7 @@ export class CampaignMetricsRepository {
       .select({
         campaignId: campaigns.campaignId,
         campaignName: campaigns.name,
+        budget: campaigns.budget,
         date: campaignMetricsDaily.date,
         spend: campaignMetricsDaily.spend,
         sales: campaignMetricsDaily.sales,
@@ -44,7 +45,12 @@ export class CampaignMetricsRepository {
     for (const r of rows) {
       let c = byCampaign.get(r.campaignId);
       if (!c) {
-        c = { campaignId: r.campaignId, campaignName: r.campaignName, dailyMetrics: [] };
+        c = {
+          campaignId: r.campaignId,
+          campaignName: r.campaignName,
+          budget: r.budget !== null && r.budget !== undefined ? Number(r.budget) : null,
+          dailyMetrics: [],
+        };
         byCampaign.set(r.campaignId, c);
       }
       if (r.date) {

@@ -9,6 +9,11 @@ export interface DailyMetricRow {
 export interface CampaignWithDailyMetrics {
   campaignId: string; // Amazon's campaign id — used as the rule's entityId
   campaignName: string | null;
+  // Optional: only D1 reads this today (the task layer's budget-change
+  // action needs a real current value to act on). Optional, not required,
+  // so existing rule tests that construct this shape by hand don't need
+  // updating just because one field none of them use gained a home.
+  budget?: number | null;
   dailyMetrics: DailyMetricRow[];
 }
 

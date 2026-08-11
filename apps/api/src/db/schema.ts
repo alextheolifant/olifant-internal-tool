@@ -13,6 +13,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
@@ -838,6 +839,13 @@ export const ppcClientConfigs = pgTable(
     thresholdOverrides: jsonb('threshold_overrides'),
     standingDirectives: text('standing_directives'),
     conservativeMode: boolean('conservative_mode').notNull().default(false),
+    // Manual per-client escalation applied to every task's priority score
+    // (priority.ts's client_multiplier term). Default 1.00 = no escalation.
+    // A client paying for a faster SLA, or one the team wants to prioritize,
+    // gets this bumped above 1.0; it's a blunt multiplier, not a per-rule setting.
+    priorityMultiplier: numeric('priority_multiplier', { precision: 4, scale: 2 })
+      .notNull()
+      .default('1.00'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -901,10 +909,11 @@ export const productEconomicsRelations = relations(
 );
 
 // ─── PPC Engine: rule runner (Today screen exception rules) ────────────────────
-// task_candidates is a raw, undeduplicated feed for the task layer (dedup,
-// scoring, enqueueing) — deliberately not built yet. Re-running evaluation for
-// the same day can produce duplicate rows; that's a known TODO for the task
-// layer, not a bug in the runner.
+// task_candidates is the raw, undeduplicated feed the rule runner writes to.
+// The task layer (tasks/task-promotion.service.ts) consumes rows where
+// promotedAt IS NULL, converts each into a real task (deduping via
+// action_fingerprint), and stamps promotedAt — so promotion is idempotent
+// and doesn't depend on correlating against a specific evaluation date.
 export const taskCandidates = pgTable(
   'task_candidates',
   {
@@ -917,6 +926,7 @@ export const taskCandidates = pgTable(
     entityId: varchar('entity_id', { length: 255 }).notNull(),
     evaluatedAt: timestamp('evaluated_at', { withTimezone: true }).notNull(),
     evidence: jsonb('evidence').notNull(),
+    promotedAt: timestamp('promoted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -979,3 +989,121 @@ export const ruleConditionStateRelations = relations(
     }),
   }),
 );
+
+// ─── Task layer ──────────────────────────────────────────────────────────────
+
+export const taskTypeEnum = pgEnum('task_type', [
+  'negation',
+  'bid_change',
+  'harvest_launch',
+  'budget',
+  'placement',
+  'pause',
+  'structural',
+  'exception',
+  'investigate',
+  'sqp_opportunity',
+  'rank_defense',
+  'cro_flag',
+  'inventory_guard',
+  'pacing',
+]);
+
+export const taskStatusEnum = pgEnum('task_status', [
+  'pending',
+  'approved',
+  'blocked',
+  'executed',
+  'verified',
+  'dismissed',
+  'expired',
+]);
+
+export const taskConfidenceEnum = pgEnum('task_confidence', ['high', 'medium', 'provisional']);
+
+// Structured dismissal reasons — feed threshold tuning later, so a fixed
+// vocabulary rather than free text is required (a note field carries anything
+// unstructured on top of the reason).
+export const taskDismissReasonEnum = pgEnum('task_dismiss_reason', [
+  'not_actionable',
+  'already_handled',
+  'incorrect_data',
+  'client_preference',
+  'duplicate',
+  'other',
+]);
+
+// One counter per calendar day, incremented atomically to produce the
+// human-readable TSK-YYYY-MM-DD-NNNNN id — see task-id.service.ts.
+export const taskIdCounters = pgTable('task_id_counters', {
+  dateKey: date('date_key').primaryKey(),
+  counter: integer('counter').notNull().default(0),
+});
+
+export const tasks = pgTable(
+  'tasks',
+  {
+    id: varchar('id', { length: 24 }).primaryKey(), // TSK-YYYY-MM-DD-NNNNN
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    profile: varchar('profile', { length: 10 }), // e.g. "US" — marketplace/profile scope, nullable until multi-marketplace tasks exist
+    ruleId: varchar('rule_id', { length: 20 }).notNull(),
+    // The rule's band (D/W/S/M/I/G) at creation time — stored rather than
+    // re-derived from ruleId via the rule registry on every query, since
+    // sorting (D-band always above every other band, regardless of score)
+    // needs it directly queryable/sortable in SQL.
+    band: varchar('band', { length: 5 }).notNull(),
+    // Duplicated from action.entityType/action.campaignId as first-class
+    // columns — same convention as task_candidates/rule_condition_state —
+    // so expiry-on-clear-condition and other entity-scoped lookups don't
+    // need JSONB path queries.
+    entityType: varchar('entity_type', { length: 50 }).notNull(),
+    entityId: varchar('entity_id', { length: 255 }).notNull(),
+    type: taskTypeEnum('type').notNull(),
+    title: text('title').notNull(),
+    // { entityType, campaignId, campaignName (verbatim), adGroupId, oldValue, newValue }
+    action: jsonb('action').notNull(),
+    // { metrics: {...rule evidence...}, window: {start,end}, provenance: {...}, fallbacks: {...} } — see evidence.ts
+    evidence: jsonb('evidence').notNull(),
+    // Ordered array of console-literal instruction strings — see instruction-templates.ts
+    instructions: jsonb('instructions').notNull(),
+    impactMonthlyUsd: numeric('impact_monthly_usd', { precision: 12, scale: 2 }),
+    impactBasis: text('impact_basis'),
+    priorityScore: integer('priority_score').notNull(),
+    confidence: taskConfidenceEnum('confidence').notNull(),
+    status: taskStatusEnum('status').notNull().default('pending'),
+    blockedBy: varchar('blocked_by', { length: 24 }).references((): AnyPgColumn => tasks.id),
+    requiresReview: boolean('requires_review').notNull().default(false),
+    standingDirectivesAck: boolean('standing_directives_ack').notNull().default(false),
+    assignee: varchar('assignee', { length: 255 }),
+    rollback: text('rollback').notNull(),
+    dismissReason: taskDismissReasonEnum('dismiss_reason'),
+    dismissNote: text('dismiss_note'),
+    // Dedup key component — see action-fingerprint.ts for the exact definition.
+    actionFingerprint: varchar('action_fingerprint', { length: 64 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    executedAt: timestamp('executed_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('idx_tasks_client_status').on(t.clientId, t.status),
+    // Dedup lookup: does an open task already exist for this
+    // (client, rule, action_fingerprint)?
+    index('idx_tasks_dedup').on(t.clientId, t.ruleId, t.actionFingerprint),
+    // Expiry-on-clear lookup: for each open task, what's the current
+    // rule_condition_state for its entity?
+    index('idx_tasks_entity').on(t.clientId, t.ruleId, t.entityType, t.entityId),
+  ],
+);
+
+export const tasksRelations = relations(tasks, ({ one }) => ({
+  client: one(clients, {
+    fields: [tasks.clientId],
+    references: [clients.id],
+  }),
+  blockedByTask: one(tasks, {
+    fields: [tasks.blockedBy],
+    references: [tasks.id],
+  }),
+}));

@@ -10,6 +10,11 @@ import { CampaignMetricsRepository } from './rules/campaign-metrics.repository';
 import { RuleRunnerController } from './rules/rule-runner.controller';
 import { RuleRunnerService } from './rules/rule-runner.service';
 import { RuleStateRepository } from './rules/rule-state.repository';
+import { EvidenceProvenanceResolver } from './tasks/evidence';
+import { TaskIdRepository } from './tasks/task-id.repository';
+import { TaskPromotionService } from './tasks/task-promotion.service';
+import { TaskRepository } from './tasks/task.repository';
+import { TasksController } from './tasks/tasks.controller';
 import { TodayController } from './today.controller';
 import { TodayService } from './today.service';
 
@@ -20,6 +25,7 @@ import { TodayService } from './today.service';
     PpcConfigController,
     ProductEconomicsController,
     RuleRunnerController,
+    TasksController,
     TodayController,
   ],
   providers: [
@@ -29,6 +35,10 @@ import { TodayService } from './today.service';
     CampaignMetricsRepository,
     RuleStateRepository,
     RuleRunnerService,
+    EvidenceProvenanceResolver,
+    TaskIdRepository,
+    TaskRepository,
+    TaskPromotionService,
     TodayService,
   ],
 })

@@ -70,6 +70,15 @@ export const d5DeliveryStoppedRule: RuleDefinition = {
 
       if (!wasPreviouslyServing) continue; // never really serving — "stopped" doesn't apply
 
+      // Average sales/spend across only the qualifying (bar-meeting) baseline
+      // days — a stopped-delivery day mixed into a plain 7-day average would
+      // understate what "normal" looked like. Surfaced here (not just
+      // impressions) so the task layer can derive a real lost-sales impact
+      // estimate instead of leaving D5 with no dollar figure at all.
+      const qualifyingDays = baselineDays.filter((d) => d.impressions >= meaningfulThreshold);
+      const baselineAvgDailySales = qualifyingDays.reduce((sum, d) => sum + d.sales, 0) / qualifyingDays.length;
+      const baselineAvgDailySpend = qualifyingDays.reduce((sum, d) => sum + d.spend, 0) / qualifyingDays.length;
+
       results.push({
         entityType: 'campaign',
         entityId: c.campaignId,
@@ -86,6 +95,8 @@ export const d5DeliveryStoppedRule: RuleDefinition = {
           nearZeroThreshold,
           campaignState: 'ENABLED',
           budgetStatus: 'unknown — not synced (see rule comment for what was checked)',
+          baselineAvgDailySales,
+          baselineAvgDailySpend,
         },
       });
     }
