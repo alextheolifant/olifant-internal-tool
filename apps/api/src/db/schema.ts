@@ -40,6 +40,7 @@ export const syncTypeEnum = pgEnum('sync_type', [
   'catalog_items',
   'ads_search_term',
   'ads_targeting',
+  'entity_snapshots',
 ]);
 
 export const syncStatusEnum = pgEnum('sync_status', [
@@ -1105,5 +1106,71 @@ export const tasksRelations = relations(tasks, ({ one }) => ({
   blockedByTask: one(tasks, {
     fields: [tasks.blockedBy],
     references: [tasks.id],
+  }),
+}));
+
+// ─── Entity snapshots: versioned daily history ─────────────────────────────
+// Append-only daily rows, not row versioning — one row per (account, date,
+// entity). The existing current-state tables (campaigns, etc.) are untouched
+// and keep serving live queries; this is additive history alongside them,
+// built specifically so diffEntityState (services/sync-ads-api/internal/sync/
+// diff.go) has two dated states of the same entity to compare. entity_id
+// (and parent_id) are Amazon's own raw ids — not FK'd to campaigns.id —
+// same convention as search_term_metrics_daily/target_metrics_daily, since
+// several entity types here (keywords, negatives, product ads) have no
+// current-state table of their own to FK to yet.
+export const entitySnapshotTypeEnum = pgEnum('entity_snapshot_type', [
+  'campaign',
+  'ad_group',
+  'keyword',
+  'product_target',
+  'negative',
+  'product_ad',
+  'portfolio',
+]);
+
+export const entitySnapshotsDaily = pgTable(
+  'entity_snapshots_daily',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    amazonAdsAccountId: uuid('amazon_ads_account_id')
+      .notNull()
+      .references(() => amazonAdsAccounts.id, { onDelete: 'cascade' }),
+    snapshotDate: date('snapshot_date').notNull(),
+    entityType: entitySnapshotTypeEnum('entity_type').notNull(),
+    entityId: varchar('entity_id', { length: 255 }).notNull(),
+    // ad_group_id for keyword/product_target/negative/product_ad rows,
+    // campaign_id for ad_group/negative(campaign-level) rows, null for
+    // campaign/portfolio rows (nothing above them).
+    parentId: varchar('parent_id', { length: 255 }),
+    // The full field set captured for this entity type on this date — see
+    // each entity's amazon.SP*/writer.SnapshotUpsert Go type for the exact
+    // shape. Deliberately untyped here (jsonb, not a fixed column set): the
+    // 7 entity types have different fields, and the diff engine reads
+    // whatever keys are present rather than assuming a shared shape.
+    state: jsonb('state').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('uq_entity_snapshot_daily').on(
+      t.amazonAdsAccountId,
+      t.snapshotDate,
+      t.entityType,
+      t.entityId,
+    ),
+    // "Give me this entity's history" — newest first.
+    index('idx_entity_snapshot_history').on(
+      t.amazonAdsAccountId,
+      t.entityType,
+      t.entityId,
+      t.snapshotDate,
+    ),
+  ],
+);
+
+export const entitySnapshotsDailyRelations = relations(entitySnapshotsDaily, ({ one }) => ({
+  account: one(amazonAdsAccounts, {
+    fields: [entitySnapshotsDaily.amazonAdsAccountId],
+    references: [amazonAdsAccounts.id],
   }),
 }));

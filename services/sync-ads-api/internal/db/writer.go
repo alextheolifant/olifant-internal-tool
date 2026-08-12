@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -763,4 +764,130 @@ func nullableString(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// ── Entity snapshots (versioned daily history) ────────────────────────────────
+
+// EntitySnapshotUpsert holds one entity's captured state for one day.
+// SnapshotDate is "YYYY-MM-DD". ParentID is "" for entities with no parent
+// (campaigns, portfolios). State is the raw JSON exactly as Amazon returned
+// it for that entity — see diffEntityState (diff.go) for how it's read back.
+type EntitySnapshotUpsert struct {
+	AmazonAdsAccountID string
+	SnapshotDate        string
+	EntityType          string
+	EntityID            string
+	ParentID            string
+	State               json.RawMessage
+}
+
+// UpsertEntitySnapshot inserts or updates one row in entity_snapshots_daily.
+// Re-running the same day's snapshot (e.g. after a crash) overwrites that
+// day's row rather than duplicating it — the unique key is
+// (account, date, entity_type, entity_id), matching the append-ONE-row-per-
+// day-not-per-run design (Part 2 of the brief).
+func (w *Writer) UpsertEntitySnapshot(ctx context.Context, s EntitySnapshotUpsert) error {
+	_, err := w.pool.Exec(ctx, `
+		INSERT INTO entity_snapshots_daily
+			(amazon_ads_account_id, snapshot_date, entity_type, entity_id, parent_id, state)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (amazon_ads_account_id, snapshot_date, entity_type, entity_id)
+		DO UPDATE SET
+			parent_id = EXCLUDED.parent_id,
+			state     = EXCLUDED.state`,
+		s.AmazonAdsAccountID, s.SnapshotDate, s.EntityType, s.EntityID, nullableString(s.ParentID), s.State,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert entity snapshot (%s %s): %w", s.EntityType, s.EntityID, err)
+	}
+	return nil
+}
+
+// CountSnapshotsForAccountDate returns how many entity_snapshots_daily rows
+// exist for one account on one date, broken down by entity_type — used to
+// report real row volume per account per day (Part 2's retention question).
+func (w *Writer) CountSnapshotsForAccountDate(ctx context.Context, accountID, snapshotDate string) (map[string]int, error) {
+	rows, err := w.pool.Query(ctx,
+		`SELECT entity_type, COUNT(*) FROM entity_snapshots_daily
+		 WHERE amazon_ads_account_id = $1 AND snapshot_date = $2
+		 GROUP BY entity_type`,
+		accountID, snapshotDate,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("count snapshots: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var entityType string
+		var n int
+		if err := rows.Scan(&entityType, &n); err != nil {
+			return nil, fmt.Errorf("scan snapshot count: %w", err)
+		}
+		counts[entityType] = n
+	}
+	return counts, rows.Err()
+}
+
+// EntitySnapshotRow is one dated snapshot as read back for diffing.
+type EntitySnapshotRow struct {
+	SnapshotDate string
+	EntityID     string
+	ParentID     string // "" if none
+	State        json.RawMessage
+}
+
+// GetEntitySnapshot returns one entity's captured state on one exact date,
+// or (EntitySnapshotRow{}, false, nil) if no snapshot exists for that date.
+func (w *Writer) GetEntitySnapshot(ctx context.Context, accountID, entityType, entityID, snapshotDate string) (EntitySnapshotRow, bool, error) {
+	var row EntitySnapshotRow
+	var parentID *string
+	row.EntityID = entityID
+	err := w.pool.QueryRow(ctx,
+		`SELECT snapshot_date::text, parent_id, state FROM entity_snapshots_daily
+		 WHERE amazon_ads_account_id = $1 AND entity_type = $2 AND entity_id = $3 AND snapshot_date = $4`,
+		accountID, entityType, entityID, snapshotDate,
+	).Scan(&row.SnapshotDate, &parentID, &row.State)
+	if err != nil {
+		if strings.Contains(err.Error(), "no rows") {
+			return EntitySnapshotRow{}, false, nil
+		}
+		return EntitySnapshotRow{}, false, fmt.Errorf("get entity snapshot: %w", err)
+	}
+	if parentID != nil {
+		row.ParentID = *parentID
+	}
+	return row, true, nil
+}
+
+// ListEntitySnapshotsForDate returns every snapshot of one entity_type for
+// one account on one date — the bulk diff variant's per-side data source
+// (diffAccountState in diff.go calls this once for "yesterday" and once for
+// "today" per entity type, rather than one query per entity).
+func (w *Writer) ListEntitySnapshotsForDate(ctx context.Context, accountID, entityType, snapshotDate string) ([]EntitySnapshotRow, error) {
+	rows, err := w.pool.Query(ctx,
+		`SELECT entity_id, parent_id, state FROM entity_snapshots_daily
+		 WHERE amazon_ads_account_id = $1 AND entity_type = $2 AND snapshot_date = $3`,
+		accountID, entityType, snapshotDate,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list entity snapshots: %w", err)
+	}
+	defer rows.Close()
+
+	var out []EntitySnapshotRow
+	for rows.Next() {
+		var r EntitySnapshotRow
+		var parentID *string
+		r.SnapshotDate = snapshotDate
+		if err := rows.Scan(&r.EntityID, &parentID, &r.State); err != nil {
+			return nil, fmt.Errorf("scan entity snapshot: %w", err)
+		}
+		if parentID != nil {
+			r.ParentID = *parentID
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }

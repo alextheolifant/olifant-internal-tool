@@ -225,6 +225,20 @@
       "when": 1786430028630,
       "tag": "0031_robust_jocasta",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1786508437344,
+      "tag": "0032_curious_korath",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1786511249412,
+      "tag": "0033_yummy_crusher_hogan",
+      "breakpoints": true
     }
   ]
 }
