@@ -50,7 +50,7 @@ const (
 	phase1Concurrency = 5  // max concurrent report requests in Phase 1
 	phase2Concurrency = 10 // max concurrent poll checks per round
 	pollInterval      = 5 * time.Minute
-	maxWait           = 16 * time.Minute // real reports take ~10 min; give 16 min headroom
+	maxWait           = 30 * time.Minute // real reports take ~10 min; give 30 min headroom
 )
 
 // regionBaseURL maps the stored region string to the Amazon API base URL.
@@ -324,7 +324,7 @@ func (o *MetricsOrchestrator) pollPendingReports(ctx context.Context, deadline t
 				if err != nil {
 					if isUnauthorized(err) {
 						// Fail fast instead of re-polling the same doomed
-						// request every 5 min until the 16-min deadline: the
+						// request every 5 min until the 30-min deadline: the
 						// credential's lack of access to this profile won't
 						// change between now and the next round. UNAUTHORIZED
 						// is excluded from FetchRetryableReportRequests's
