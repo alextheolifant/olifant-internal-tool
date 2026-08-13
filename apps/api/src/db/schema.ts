@@ -33,6 +33,7 @@ export const syncTypeEnum = pgEnum('sync_type', [
   'ads_metrics',
   'ads_metrics_retry',
   'sp_orders',
+  'sp_orders_retry',
   'sp_inventory',
   'ads_profiles',
   'anomaly_detection',
@@ -468,6 +469,10 @@ export const spReportRequests = pgTable(
     // SP-API's own processingStatus values — different from ads_report_requests'
     // PENDING/PROCESSING, do not conflate the two.
     status: varchar('status', { length: 20 }).notNull().default('IN_QUEUE'),
+    // 0 for fresh requests; >0 for retries — mirrors ads_report_requests'
+    // retry_count exactly, so sp-api's retry-reports can escalate to
+    // FAILED_PERMANENT the same way ads-api's does.
+    retryCount: integer('retry_count').notNull().default(0),
     requestedAt: timestamp('requested_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

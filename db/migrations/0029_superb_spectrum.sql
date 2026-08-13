@@ -1,0 +1,1 @@
+ALTER TYPE "public"."sync_type" ADD VALUE 'sp_orders_retry' BEFORE 'sp_inventory';

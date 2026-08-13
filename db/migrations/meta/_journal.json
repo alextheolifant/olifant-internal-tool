@@ -197,6 +197,20 @@
       "when": 1786346353253,
       "tag": "0027_careful_baron_zemo",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1786586881656,
+      "tag": "0028_first_invisible_woman",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1786587100595,
+      "tag": "0029_superb_spectrum",
+      "breakpoints": true
     }
   ]
 }

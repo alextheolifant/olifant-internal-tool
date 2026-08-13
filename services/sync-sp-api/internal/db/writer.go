@@ -70,6 +70,20 @@ func (w *Writer) FetchActiveAccounts(ctx context.Context) ([]SpAccount, error) {
 
 // ── Sync log tracking (sync_logs, scoped to amazon_sp_account_id) ─────────────
 
+// CreateSyncLog creates a sync_log entry not scoped to any single account —
+// for a run that spans multiple accounts, like RetryFailedReports.
+func (w *Writer) CreateSyncLog(ctx context.Context, syncType string) (string, error) {
+	var id string
+	err := w.pool.QueryRow(ctx,
+		`INSERT INTO sync_logs (sync_type, status) VALUES ($1, 'pending') RETURNING id`,
+		syncType,
+	).Scan(&id)
+	if err != nil {
+		return "", fmt.Errorf("create sync log: %w", err)
+	}
+	return id, nil
+}
+
 // CreateAccountSyncLog creates a sync_log entry scoped to one SP account.
 func (w *Writer) CreateAccountSyncLog(ctx context.Context, syncType, accountID string) (string, error) {
 	var id string
@@ -123,6 +137,7 @@ type ReportRequestInsert struct {
 	ReportID          string
 	StartDate         string
 	EndDate           string
+	RetryCount        int // 0 for fresh requests; >0 for retries
 }
 
 // InsertReportRequest persists a new IN_QUEUE report request row and returns its UUID.
@@ -130,10 +145,10 @@ func (w *Writer) InsertReportRequest(ctx context.Context, r ReportRequestInsert)
 	var id string
 	err := w.pool.QueryRow(ctx, `
 		INSERT INTO sp_report_requests
-			(amazon_sp_account_id, sync_log_id, region, report_id, start_date, end_date, status)
-		VALUES ($1, $2, $3, $4, $5, $6, 'IN_QUEUE')
+			(amazon_sp_account_id, sync_log_id, region, report_id, start_date, end_date, status, retry_count)
+		VALUES ($1, $2, $3, $4, $5, $6, 'IN_QUEUE', $7)
 		RETURNING id`,
-		r.AmazonSPAccountID, r.SyncLogID, r.Region, r.ReportID, r.StartDate, r.EndDate,
+		r.AmazonSPAccountID, r.SyncLogID, r.Region, r.ReportID, r.StartDate, r.EndDate, r.RetryCount,
 	).Scan(&id)
 	if err != nil {
 		return "", fmt.Errorf("insert report request: %w", err)
@@ -287,6 +302,101 @@ func (w *Writer) MarkTimedOutReportRequests(ctx context.Context, before time.Tim
 	}
 
 	return count, nil
+}
+
+// ── Retry helpers ─────────────────────────────────────────────────────────────
+// Mirrors sync-ads-api's identical mechanism exactly (writer.go's
+// FetchRetryableReportRequests/MarkReportPermanentFailure/ReplaceWithRetry)
+// so both services' report-request tables behave the same way: a row that
+// fails FATAL/CANCELLED gets retried up to retryCap times, then escalated to
+// FAILED_PERMANENT — a real, intentionally-retained record, not silently
+// dropped or retried forever.
+
+// RetryableReportRequest is a terminal sp_report_requests row eligible for retry.
+type RetryableReportRequest struct {
+	ID                string
+	AmazonSPAccountID string
+	SellingPartnerID  string
+	Region            string
+	Marketplace       string
+	StartDate         string
+	EndDate           string
+	RetryCount        int
+}
+
+// FetchRetryableReportRequests returns all rows with a terminal-failure status
+// (FATAL, CANCELLED — sp-api's vocabulary, not ads-api's TIMED_OUT/FAILED)
+// that have not yet been escalated to FAILED_PERMANENT.
+func (w *Writer) FetchRetryableReportRequests(ctx context.Context) ([]RetryableReportRequest, error) {
+	rows, err := w.pool.Query(ctx, `
+		SELECT r.id, r.amazon_sp_account_id, a.selling_partner_id, r.region, a.marketplace,
+		       r.start_date::text, r.end_date::text, r.retry_count
+		FROM sp_report_requests r
+		JOIN amazon_sp_accounts a ON a.id = r.amazon_sp_account_id
+		WHERE r.status IN ('FATAL', 'CANCELLED')
+		ORDER BY r.requested_at`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("fetch retryable report requests: %w", err)
+	}
+	defer rows.Close()
+
+	var result []RetryableReportRequest
+	for rows.Next() {
+		var r RetryableReportRequest
+		if err := rows.Scan(&r.ID, &r.AmazonSPAccountID, &r.SellingPartnerID, &r.Region, &r.Marketplace,
+			&r.StartDate, &r.EndDate, &r.RetryCount); err != nil {
+			return nil, fmt.Errorf("scan retryable row: %w", err)
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
+// MarkReportPermanentFailure escalates a terminal row to FAILED_PERMANENT when
+// the retry cap has been reached. No new request will be submitted for this row.
+func (w *Writer) MarkReportPermanentFailure(ctx context.Context, id, reason string) error {
+	_, err := w.pool.Exec(ctx, `
+		UPDATE sp_report_requests
+		SET status = 'FAILED_PERMANENT', error_message = $2, last_checked_at = now()
+		WHERE id = $1`,
+		id, reason,
+	)
+	if err != nil {
+		return fmt.Errorf("mark report permanent failure: %w", err)
+	}
+	return nil
+}
+
+// ReplaceWithRetry atomically inserts a new IN_QUEUE row (with incremented
+// retry_count) and deletes the old terminal row, returning the new row's
+// UUID. Uses a transaction so there is no window where neither row exists.
+func (w *Writer) ReplaceWithRetry(ctx context.Context, oldID string, r ReportRequestInsert) (string, error) {
+	tx, err := w.pool.Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var newID string
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO sp_report_requests
+			(amazon_sp_account_id, sync_log_id, region, report_id, start_date, end_date, status, retry_count)
+		VALUES ($1, $2, $3, $4, $5, $6, 'IN_QUEUE', $7)
+		RETURNING id`,
+		r.AmazonSPAccountID, r.SyncLogID, r.Region, r.ReportID, r.StartDate, r.EndDate, r.RetryCount,
+	).Scan(&newID); err != nil {
+		return "", fmt.Errorf("insert retry row: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM sp_report_requests WHERE id = $1`, oldID); err != nil {
+		return "", fmt.Errorf("delete old row: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("commit retry tx: %w", err)
+	}
+	return newID, nil
 }
 
 // ── Sales upsert (sp_sales_daily) ──────────────────────────────────────────────
