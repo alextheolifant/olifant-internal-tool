@@ -100,6 +100,12 @@ docker run --rm \
   --entrypoint /sync-catalog \
   olifant-sync-sp-api
 
+# sp-api: retry failed report requests (no ClickHouse — sp-api never writes to CH)
+docker run --rm \
+  -e DATABASE_URL -e SP_API_CLIENT_ID -e SP_API_CLIENT_SECRET -e SP_TOKEN_ENCRYPTION_KEY \
+  --entrypoint /retry-reports \
+  olifant-sync-sp-api
+
 # ads-api: profiles
 docker run --rm \
   -e DATABASE_URL -e ADS_CLIENT_ID -e ADS_CLIENT_SECRET -e SP_TOKEN_ENCRYPTION_KEY \
