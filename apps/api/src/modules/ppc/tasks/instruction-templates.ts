@@ -55,6 +55,19 @@ const TEMPLATES: Record<string, InstructionTemplate> = {
     MARK_EXECUTED,
   ],
 
+  // D3 — Unintended pause: the pause itself is a hard fact from the diff
+  // engine (see d3-unintended-pause.rule.ts), but WHY it happened isn't —
+  // no signal in the synced data says "a human did this" vs. "Amazon's
+  // automation did this" vs. "a bulk tool did this" (see ledger.service.ts's
+  // conservative category inference). Guided review, same shape as D4/D5.
+  'D3:investigate': ({ action, evidence }) => [
+    `Open campaign '${action.campaignName}' in the Ads console.`,
+    `Confirm it is currently Paused — last detected ${String(evidence.detectedAt)}, changed from Enabled to Paused with no task in the queue proposing that change.`,
+    `Check the campaign's change history in the Ads console (if available) for who/what made the change.`,
+    `If the pause was unintended, re-enable the campaign. If it was intentional (a deliberate manual pause, a bulk edit, or a legitimate reason not tracked here), note that instead.`,
+    MARK_EXECUTED,
+  ],
+
   // D5 — Delivery stopped: diagnostic only, cause unknown by design (see
   // rule comment) — the card states plainly what is and isn't known instead
   // of implying a specific cause the data can't actually confirm.

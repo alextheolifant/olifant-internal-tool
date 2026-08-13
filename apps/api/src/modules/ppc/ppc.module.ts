@@ -1,5 +1,9 @@
 import { Module } from '@nestjs/common';
 import { MetricsModule } from '../metrics/metrics.module';
+import { EntityDiffService } from './entity-diff/entity-diff.service';
+import { LedgerController } from './ledger/ledger.controller';
+import { LedgerRepository } from './ledger/ledger.repository';
+import { LedgerService } from './ledger/ledger.service';
 import { PpcClientsController } from './ppc-clients.controller';
 import { PpcClientsService } from './ppc-clients.service';
 import { PpcConfigController } from './ppc-config.controller';
@@ -17,10 +21,13 @@ import { TaskRepository } from './tasks/task.repository';
 import { TasksController } from './tasks/tasks.controller';
 import { TodayController } from './today.controller';
 import { TodayService } from './today.service';
+import { SlackNotifierService } from './verification/slack-notifier.service';
+import { VerificationService } from './verification/verification.service';
 
 @Module({
   imports: [MetricsModule],
   controllers: [
+    LedgerController,
     PpcClientsController,
     PpcConfigController,
     ProductEconomicsController,
@@ -40,6 +47,11 @@ import { TodayService } from './today.service';
     TaskRepository,
     TaskPromotionService,
     TodayService,
+    EntityDiffService,
+    LedgerRepository,
+    LedgerService,
+    VerificationService,
+    SlackNotifierService,
   ],
 })
 export class PpcModule {}

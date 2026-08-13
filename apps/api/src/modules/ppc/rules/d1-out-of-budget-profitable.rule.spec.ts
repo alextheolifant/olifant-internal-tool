@@ -1,5 +1,6 @@
 import { d1OutOfBudgetProfitableRule } from './d1-out-of-budget-profitable.rule';
 import { makeThresholdResolver } from './thresholds';
+import type { LedgerRepository } from '../ledger/ledger.repository';
 import type { CampaignMetricsRepository } from './campaign-metrics.repository';
 import type { CampaignWithDailyMetrics } from './campaign-window';
 import type { RuleEvalContext } from './types';
@@ -7,6 +8,10 @@ import type { RuleEvalContext } from './types';
 function fakeRepo(campaigns: CampaignWithDailyMetrics[]): CampaignMetricsRepository {
   return { getEnabledCampaignsWithDailyMetrics: async () => campaigns } as unknown as CampaignMetricsRepository;
 }
+
+// D1 doesn't touch the ledger — only D3 does — so an unimplemented stub is
+// enough to satisfy RuleEvalContext's shape here.
+const fakeLedger = {} as unknown as LedgerRepository;
 
 describe('d1OutOfBudgetProfitableRule', () => {
   const evaluationDate = '2026-08-04';
@@ -19,6 +24,7 @@ describe('d1OutOfBudgetProfitableRule', () => {
       resolveThreshold: makeThresholdResolver({}),
       be: { value: 30, isFallback: true },
       campaignMetrics: fakeRepo([{ campaignId: 'c1', campaignName: 'Profitable', dailyMetrics: daily }]),
+      ledger: fakeLedger,
     };
 
     const results = await d1OutOfBudgetProfitableRule.evaluate(ctx);
@@ -39,6 +45,7 @@ describe('d1OutOfBudgetProfitableRule', () => {
       resolveThreshold: makeThresholdResolver({}),
       be: { value: 30, isFallback: true },
       campaignMetrics: fakeRepo([{ campaignId: 'c1', campaignName: 'NoSales', dailyMetrics: daily }]),
+      ledger: fakeLedger,
     };
     const results = await d1OutOfBudgetProfitableRule.evaluate(ctx);
     expect(results).toHaveLength(0);

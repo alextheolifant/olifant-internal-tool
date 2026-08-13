@@ -1016,8 +1016,19 @@ export const taskStatusEnum = pgEnum('task_status', [
   'blocked',
   'executed',
   'verified',
+  'verify_failed',
   'dismissed',
   'expired',
+]);
+
+// Which of the three distinct mismatch cases produced a verify_failed —
+// see verification.service.ts. Recorded so the person investigating knows
+// whether to look for "never actually done," "someone entered something
+// else," or "entity's gone" without re-deriving it from the diff by hand.
+export const taskVerifyMismatchReasonEnum = pgEnum('task_verify_mismatch_reason', [
+  'unchanged', // entity's current value still matches the pre-change oldValue
+  'different_value', // entity changed, but not to the confirmed value
+  'entity_deleted', // entity no longer appears in the latest snapshot
 ]);
 
 export const taskConfidenceEnum = pgEnum('task_confidence', ['high', 'medium', 'provisional']);
@@ -1083,6 +1094,13 @@ export const tasks = pgTable(
     dismissNote: text('dismiss_note'),
     // Dedup key component — see action-fingerprint.ts for the exact definition.
     actionFingerprint: varchar('action_fingerprint', { length: 64 }).notNull(),
+    // What the executor actually confirmed at execution time — may differ
+    // from action.newValue (the proposed value). Null for actions with
+    // nothing to confirm (investigate-type tasks, action.newValue null).
+    // What verification compares against, not action.newValue directly.
+    confirmedValue: text('confirmed_value'),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    verifyMismatchReason: taskVerifyMismatchReasonEnum('verify_mismatch_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     executedAt: timestamp('executed_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1172,5 +1190,77 @@ export const entitySnapshotsDailyRelations = relations(entitySnapshotsDaily, ({ 
   account: one(amazonAdsAccounts, {
     fields: [entitySnapshotsDaily.amazonAdsAccountId],
     references: [amazonAdsAccounts.id],
+  }),
+}));
+
+// ─── Ledger: append-only change history ────────────────────────────────────
+// Two sources write here — see ledger.service.ts:
+//   'engine'   — a task reaching executed/verified, the change the engine
+//                itself made (or a human made via the task queue).
+//   'external' — a diff-engine-detected change with no matching task; the
+//                diff engine's own comparison a human or Amazon made
+//                directly in the console/API, outside the task queue.
+// Never updated or deleted after insert — a correction is a new row, not an
+// edit to an old one. Retained indefinitely (this IS the audit trail).
+export const ledgerSourceEnum = pgEnum('ledger_source', ['engine', 'external']);
+
+// Inferred pattern behind an external change, where the evidence clearly
+// supports it — deliberately conservative (see ledger.service.ts's
+// inferCategory): 'bulk_operation' is the only one actually detected today
+// (same field+value changing across several entities on the same account on
+// the same day). 'amazon_recommendation' has no signal to detect it against
+// in the data this platform captures (no "applied by" field anywhere in the
+// synced entity state) — the value exists in the vocabulary but nothing
+// assigns it yet, rather than guessing. 'manual' is never assigned either,
+// for the same reason: "not bulk" isn't positive evidence of "a human did
+// this by hand," just an absence of the one pattern that IS detectable.
+export const ledgerCategoryEnum = pgEnum('ledger_category', [
+  'bulk_operation',
+  'amazon_recommendation',
+  'manual',
+]);
+
+export const ledgerEntries = pgTable(
+  'ledger_entries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    profile: varchar('profile', { length: 10 }),
+    // The day the change was detected, not the exact console timestamp —
+    // for source='external' this is the diff's toDate (daily-granularity
+    // detection, see ledger.service.ts). For source='engine' this is the
+    // task's executedAt, which IS a real timestamp.
+    timestampDetected: timestamp('timestamp_detected', { withTimezone: true }).notNull(),
+    entityType: varchar('entity_type', { length: 50 }).notNull(),
+    entityId: varchar('entity_id', { length: 255 }).notNull(),
+    campaignName: varchar('campaign_name', { length: 500 }),
+    field: varchar('field', { length: 100 }).notNull(),
+    oldValue: text('old_value'),
+    newValue: text('new_value'),
+    source: ledgerSourceEnum('source').notNull(),
+    taskId: varchar('task_id', { length: 24 }).references(() => tasks.id, { onDelete: 'set null' }),
+    actor: varchar('actor', { length: 255 }),
+    note: text('note'),
+    // Not in the literal §8.5 column list — added so "Category inference on
+    // external changes" (Part 2) has somewhere real to persist its result.
+    category: ledgerCategoryEnum('category'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('idx_ledger_client_timestamp').on(t.clientId, t.timestampDetected),
+    index('idx_ledger_client_entity').on(t.clientId, t.entityId),
+  ],
+);
+
+export const ledgerEntriesRelations = relations(ledgerEntries, ({ one }) => ({
+  client: one(clients, {
+    fields: [ledgerEntries.clientId],
+    references: [clients.id],
+  }),
+  task: one(tasks, {
+    fields: [ledgerEntries.taskId],
+    references: [tasks.id],
   }),
 }));

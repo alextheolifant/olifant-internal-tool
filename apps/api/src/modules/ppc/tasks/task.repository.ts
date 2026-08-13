@@ -3,7 +3,15 @@ import { and, asc, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import { DrizzleService } from '../../../db/drizzle.service';
 import { tasks } from '../../../db/schema';
 import { OPEN_STATUSES } from './task-lifecycle';
-import type { TaskAction, TaskConfidence, TaskDismissReason, TaskEvidence, TaskStatus, TaskType } from './task.types';
+import type {
+  TaskAction,
+  TaskConfidence,
+  TaskDismissReason,
+  TaskEvidence,
+  TaskStatus,
+  TaskType,
+  TaskVerifyMismatchReason,
+} from './task.types';
 
 export type TaskRow = typeof tasks.$inferSelect;
 
@@ -119,6 +127,47 @@ export class TaskRepository {
       .update(tasks)
       .set({ status, updatedAt: new Date(), ...(extra.executedAt ? { executedAt: extra.executedAt } : {}) })
       .where(eq(tasks.id, id));
+  }
+
+  // Marking executed requires confirming the value (§8.3) — this is the only
+  // path that may set status='executed', separate from the generic setStatus
+  // above (see tasks.controller.ts, which rejects 'executed' through the
+  // generic PATCH). confirmedValue is what the executor actually entered,
+  // which may differ from action.newValue; null when the action has nothing
+  // to confirm (action.field null — investigate-type tasks).
+  async confirmExecution(id: string, confirmedValue: string | null): Promise<void> {
+    const now = new Date();
+    await this.drizzle.db
+      .update(tasks)
+      .set({ status: 'executed', executedAt: now, updatedAt: now, confirmedValue })
+      .where(eq(tasks.id, id));
+  }
+
+  async setVerified(id: string): Promise<void> {
+    const now = new Date();
+    await this.drizzle.db
+      .update(tasks)
+      .set({ status: 'verified', verifiedAt: now, updatedAt: now })
+      .where(eq(tasks.id, id));
+  }
+
+  async setVerifyFailed(id: string, reason: TaskVerifyMismatchReason): Promise<void> {
+    const now = new Date();
+    await this.drizzle.db
+      .update(tasks)
+      .set({ status: 'verify_failed', verifiedAt: now, verifyMismatchReason: reason, updatedAt: now })
+      .where(eq(tasks.id, id));
+  }
+
+  // Every task currently awaiting verification. Filtering to only the ones
+  // with a field-level change (action.field non-null) happens in
+  // verification.service.ts rather than here — expected volume is low
+  // enough (executed tasks, not all tasks) that an in-memory filter over a
+  // jsonb column beats a raw ->> query for a set this small, and keeps the
+  // "what counts as verifiable" decision next to the rest of the
+  // verification logic instead of split across two files.
+  async findExecuted(): Promise<TaskRow[]> {
+    return this.drizzle.db.query.tasks.findMany({ where: eq(tasks.status, 'executed') });
   }
 
   async dismiss(id: string, reason: TaskDismissReason, note: string | null): Promise<void> {

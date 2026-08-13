@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DrizzleService } from '../../../db/drizzle.service';
 import { clients, ppcClientConfigs, taskCandidates } from '../../../db/schema';
+import { LedgerRepository } from '../ledger/ledger.repository';
 import { resolveAccountBE } from './be-resolution';
 import { CampaignMetricsRepository } from './campaign-metrics.repository';
 import { applyPersistenceAndHysteresis } from './persistence-hysteresis-guard';
@@ -24,6 +25,7 @@ export class RuleRunnerService {
     private readonly drizzle: DrizzleService,
     private readonly campaignMetrics: CampaignMetricsRepository,
     private readonly ruleState: RuleStateRepository,
+    private readonly ledgerRepo: LedgerRepository,
   ) {}
 
   // Core evaluation loop: iterate active clients -> evaluate each registered
@@ -46,6 +48,7 @@ export class RuleRunnerService {
         resolveThreshold,
         be,
         campaignMetrics: this.campaignMetrics,
+        ledger: this.ledgerRepo,
       };
 
       for (const rule of REGISTERED_RULES) {

@@ -1,5 +1,6 @@
 import { d4AcosBlowoutRule } from './d4-acos-blowout.rule';
 import { makeThresholdResolver } from './thresholds';
+import type { LedgerRepository } from '../ledger/ledger.repository';
 import type { CampaignMetricsRepository } from './campaign-metrics.repository';
 import type { CampaignWithDailyMetrics } from './campaign-window';
 import type { RuleEvalContext } from './types';
@@ -9,6 +10,10 @@ function fakeRepo(campaigns: CampaignWithDailyMetrics[]): CampaignMetricsReposit
     getEnabledCampaignsWithDailyMetrics: async () => campaigns,
   } as unknown as CampaignMetricsRepository;
 }
+
+// D4 doesn't touch the ledger — only D3 does — so an unimplemented stub is
+// enough to satisfy RuleEvalContext's shape here.
+const fakeLedger = {} as unknown as LedgerRepository;
 
 function dailyRow(date: string, spend: number, sales: number, clicks = 10, impressions = 0) {
   return { date, spend, sales, clicks, impressions };
@@ -24,6 +29,7 @@ describe('d4AcosBlowoutRule', () => {
       resolveThreshold: makeThresholdResolver(overrides),
       be: { value: 30, isFallback: true },
       campaignMetrics: fakeRepo(campaigns),
+      ledger: fakeLedger,
     };
   }
 

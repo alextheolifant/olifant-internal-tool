@@ -239,6 +239,13 @@
       "when": 1786511249412,
       "tag": "0033_yummy_crusher_hogan",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1786600202377,
+      "tag": "0034_funny_jigsaw",
+      "breakpoints": true
     }
   ]
 }

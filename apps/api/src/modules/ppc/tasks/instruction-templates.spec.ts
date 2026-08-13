@@ -8,6 +8,7 @@ const baseAction: TaskAction = {
   adGroupId: null,
   oldValue: null,
   newValue: null,
+  field: null,
 };
 
 describe('renderInstructions', () => {

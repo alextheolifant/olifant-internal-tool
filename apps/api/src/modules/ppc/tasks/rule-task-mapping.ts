@@ -60,6 +60,12 @@ const MAPPERS: Record<string, Mapper> = {
         adGroupId: null,
         oldValue: currentBudget,
         newValue: newBudget,
+        // Dotted path into the campaign snapshot's flattened state — see
+        // entity_snapshots_daily's real shape: {"budget": {"budget": N,
+        // "budgetType": "DAILY"}}. Matches flattenJSON's own convention
+        // exactly (entity-diff.service.ts), so verification and the ledger
+        // can read the same key the diff engine would produce.
+        field: 'budget.budget',
       },
       rollback: currentBudget !== null
         ? `Set the daily budget back to $${currentBudget.toFixed(2)}.`
@@ -102,6 +108,7 @@ const MAPPERS: Record<string, Mapper> = {
         adGroupId: null,
         oldValue: null,
         newValue: null,
+        field: null, // diagnostic — no field-level change proposed
       },
       rollback: 'Diagnostic task — no system change is made by executing it. Nothing to roll back.',
       impactMonthlyUsd,
@@ -140,11 +147,49 @@ const MAPPERS: Record<string, Mapper> = {
         adGroupId: null,
         oldValue: null,
         newValue: null,
+        field: null, // diagnostic — no field-level change proposed
       },
       rollback: 'Diagnostic task — no system change is made by executing it. Nothing to roll back.',
       impactMonthlyUsd,
       impactBasis: 'baseline average daily sales (qualifying days only) × 30 — projects the pre-stoppage run-rate forward',
       confidence,
+    };
+  },
+
+  D3: (evidence, entityId) => {
+    const campaignName = str(evidence.campaignName);
+    const oldValue = evidence.oldValue;
+
+    return {
+      type: 'investigate',
+      title: `Unintended pause — "${campaignName}" was paused outside the task queue`,
+      action: {
+        entityType: 'campaign',
+        campaignId: entityId,
+        campaignName,
+        adGroupId: null,
+        oldValue: typeof oldValue === 'string' ? oldValue : null,
+        newValue: null,
+        field: null, // diagnostic — go investigate why, not a specific proposed value
+      },
+      rollback:
+        'Diagnostic task — no system change is made by executing it. Re-enable the campaign in the Ads console if the pause was unintended.',
+      // No reliable dollar baseline at detection time — D5 (delivery
+      // stopped) already covers "lost sales while stopped" once enough
+      // post-pause data exists; D3's own value is catching the pause fast,
+      // not re-deriving D5's estimate.
+      impactMonthlyUsd: null,
+      impactBasis: null,
+      // The pause itself is a hard fact straight from the diff engine
+      // (entity_snapshots_daily comparison), not an inference — high
+      // confidence regardless of category.
+      confidence: 'high',
+      // Not part of RuleTaskContent's shape but worth noting here: evidence
+      // keeps ledgerEntryId (see d3-unintended-pause.rule.ts) so the task's
+      // evidence payload always points at exactly which ledger row
+      // triggered it, per the brief's "Evidence should include the ledger
+      // entry id" — carried through automatically since buildEvidence
+      // wraps the rule's raw evidence unmodified.
     };
   },
 };

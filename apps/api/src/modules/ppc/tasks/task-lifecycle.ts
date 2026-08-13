@@ -4,13 +4,18 @@ import type { TaskStatus } from './task.types';
 // pending → approved → executed → verified is the brief's stated happy path.
 // approved is a required gate — pending cannot jump straight to executed.
 // dismissed/expired are reachable from any open (non-terminal) state;
-// executed/verified/dismissed/expired are all terminal — nothing leaves them.
+// executed's own two outcomes (verified, verify_failed) are decided by the
+// verification job, not a human — see verification.service.ts. All four of
+// verified/verify_failed/dismissed/expired are terminal — nothing leaves them
+// (verify_failed included: per the brief, a mismatch is investigated and
+// resolved by a human outside the task's own lifecycle, not retried in place).
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   pending: ['approved', 'blocked', 'dismissed', 'expired'],
   approved: ['executed', 'blocked', 'dismissed', 'expired'],
   blocked: ['pending', 'approved', 'dismissed', 'expired'],
-  executed: ['verified'],
+  executed: ['verified', 'verify_failed'],
   verified: [],
+  verify_failed: [],
   dismissed: [],
   expired: [],
 };

@@ -1,5 +1,6 @@
 import { d5DeliveryStoppedRule } from './d5-delivery-stopped.rule';
 import { makeThresholdResolver } from './thresholds';
+import type { LedgerRepository } from '../ledger/ledger.repository';
 import type { CampaignMetricsRepository } from './campaign-metrics.repository';
 import type { CampaignWithDailyMetrics, DailyMetricRow } from './campaign-window';
 import type { RuleEvalContext } from './types';
@@ -7,6 +8,10 @@ import type { RuleEvalContext } from './types';
 function fakeRepo(campaigns: CampaignWithDailyMetrics[]): CampaignMetricsRepository {
   return { getEnabledCampaignsWithDailyMetrics: async () => campaigns } as unknown as CampaignMetricsRepository;
 }
+
+// D5 doesn't touch the ledger — only D3 does — so an unimplemented stub is
+// enough to satisfy RuleEvalContext's shape here.
+const fakeLedger = {} as unknown as LedgerRepository;
 
 function row(date: string, impressions: number): DailyMetricRow {
   return { date, spend: 0, sales: 0, clicks: 0, impressions };
@@ -22,6 +27,7 @@ describe('d5DeliveryStoppedRule', () => {
       resolveThreshold: makeThresholdResolver(overrides),
       be: { value: 30, isFallback: true },
       campaignMetrics: fakeRepo(campaigns),
+      ledger: fakeLedger,
     };
   }
 

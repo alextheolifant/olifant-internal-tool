@@ -1,3 +1,4 @@
+import type { LedgerRepository } from '../ledger/ledger.repository';
 import type { CampaignMetricsRepository } from './campaign-metrics.repository';
 
 export type RuleBand = 'D' | 'W' | 'S' | 'M' | 'I' | 'G';
@@ -20,6 +21,11 @@ export interface RuleEvalContext {
   resolveThreshold: (key: string, systemDefault: number) => number;
   be: ResolvedBE;
   campaignMetrics: CampaignMetricsRepository;
+  // Read access for D3 — an unmatched external change IS a ledger query
+  // (source='external' already means "no task attributed it," see
+  // ledger.service.ts), not a rule condition computed from metrics like the
+  // others here.
+  ledger: LedgerRepository;
 }
 
 // One entity's condition reading for a given rule/evaluation. The rule

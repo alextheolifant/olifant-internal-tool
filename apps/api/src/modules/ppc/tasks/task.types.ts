@@ -20,9 +20,21 @@ export type TaskType =
   | 'inventory_guard'
   | 'pacing';
 
-export type TaskStatus = 'pending' | 'approved' | 'blocked' | 'executed' | 'verified' | 'dismissed' | 'expired';
+export type TaskStatus =
+  | 'pending'
+  | 'approved'
+  | 'blocked'
+  | 'executed'
+  | 'verified'
+  | 'verify_failed'
+  | 'dismissed'
+  | 'expired';
 
 export type TaskConfidence = 'high' | 'medium' | 'provisional';
+
+// Mirrors schema.ts's taskVerifyMismatchReasonEnum — which of the three
+// distinct verify_failed cases occurred, per verification.service.ts.
+export type TaskVerifyMismatchReason = 'unchanged' | 'different_value' | 'entity_deleted';
 
 export type TaskDismissReason =
   | 'not_actionable'
@@ -43,6 +55,13 @@ export interface TaskAction {
   adGroupId: string | null;
   oldValue: string | number | null;
   newValue: string | number | null;
+  // Dotted path into the entity snapshot's flattened state — e.g. "bid",
+  // "budget.budget" — identifying WHICH field oldValue/newValue refer to.
+  // Null for investigate/exception-type tasks with no field-level change at
+  // all (D4, D5 today — oldValue/newValue are null there too). Added for
+  // the execution/verification loop: verification needs to know exactly
+  // which key to read out of entity_snapshots_daily.state.
+  field: string | null;
 }
 
 export interface TaskEvidenceProvenance {
