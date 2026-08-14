@@ -88,8 +88,14 @@ export function TodayView() {
           value={statCards.verifiedSavings}
           format={(n) => `${cur(n)}/mo`}
           colorClassWhenAvailable="text-green-700"
-          sub="run-rate across synced accounts"
-          subWhenUnavailable="Not yet available — Ledger/Monitor not built"
+          sub="net of account trend, concluded monitors only"
+          // Distinct from "$0 saved": nothing has finished its 30-day
+          // monitoring window yet, so there is nothing measured to report.
+          subWhenUnavailable={
+            statCards.verifiedSavingsPending
+              ? "No monitored change has completed its 30-day window yet"
+              : "Not yet available"
+          }
         />
         <StatTile
           label="Open tasks"

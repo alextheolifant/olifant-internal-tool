@@ -34,9 +34,10 @@ export interface PpcClientRow {
   pacing: PpcClientPacing | null;
   openTasks: null;
   dollarsAtStake: null;
-  verifiedSavingsPerMonth: null;
   guardActive: null;
   externalChanges30d: null;
+  // Real, from concluded monitors — null only while none have concluded.
+  verifiedSavingsPerMonth: number | null;
 }
 
 export async function fetchPpcClients(

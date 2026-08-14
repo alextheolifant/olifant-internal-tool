@@ -1264,3 +1264,54 @@ export const ledgerEntriesRelations = relations(ledgerEntries, ({ one }) => ({
     references: [tasks.id],
   }),
 }));
+
+// ─── Monitor: post-change feedback loop ────────────────────────────────────
+// One row per executed task, opening a −14d…+30d window over the EXISTING
+// daily fact tables (campaign_metrics_daily / target_metrics_daily /
+// search_term_metrics_daily). No Amazon API calls — the monitor is a saved
+// query keyed on (entity id, campaign id, execution date), see
+// monitor-facts.repository.ts.
+export const monitorStateEnum = pgEnum('monitor_state', ['watching', 'concluded']);
+
+export const taskMonitors = pgTable(
+  'task_monitors',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    taskId: varchar('task_id', { length: 24 })
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    // Duplicated from the task rather than joined on every read — a monitor
+    // must keep measuring the same entity even if the task's own action is
+    // later amended, same first-class-column convention as tasks.entityType.
+    entityType: varchar('entity_type', { length: 50 }).notNull(),
+    entityId: varchar('entity_id', { length: 255 }).notNull(),
+    // Amazon's campaign id (not campaigns.id) — the parent whose side effects
+    // are tracked alongside the entity. Equal to entityId for campaign-level
+    // tasks, which is every task any registered rule currently produces.
+    campaignId: varchar('campaign_id', { length: 255 }).notNull(),
+    executionDate: date('execution_date').notNull(),
+    state: monitorStateEnum('state').notNull().default('watching'),
+    // Full verdict payloads — see monitor.types.ts's MonitorVerdict for the
+    // shape. jsonb rather than columns because a verdict's measured fields
+    // differ per task type (savings for a negation, capped-days for a
+    // budget change, impression collapse for a bid change).
+    checkpoint14d: jsonb('checkpoint_14d'),
+    verdict30d: jsonb('verdict_30d'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One monitor per task — openForExecutedTasks relies on this to stay
+    // idempotent across repeated runs.
+    uniqueIndex('uq_task_monitor_task').on(t.taskId),
+    // "Which monitors are still watching" — the daily run's driving query.
+    index('idx_task_monitor_state').on(t.state, t.executionDate),
+  ],
+);
+
+export const taskMonitorsRelations = relations(taskMonitors, ({ one }) => ({
+  task: one(tasks, {
+    fields: [taskMonitors.taskId],
+    references: [tasks.id],
+  }),
+}));

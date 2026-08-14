@@ -16,6 +16,35 @@ export const RULE_THRESHOLD_DEFAULTS = {
   // or above this — used to establish the campaign was actually delivering
   // before, not just newly launched or always-quiet.
   d5_meaningful_impressions: 10,
+
+  // ── Monitor (post-change feedback loop) ──────────────────────────────────
+  // What makes an account's trend baseline usable for difference-in-
+  // differences normalization. Failing ANY of the three means the verdict
+  // must say "trend baseline insufficient — raw comparison shown" rather
+  // than presenting a raw number as if it were normalized (see
+  // normalization.ts).
+  //
+  // Total account spend across the 14-day pre-window. Below this the
+  // account-wide percentage movement is dominated by rounding on a handful
+  // of dollars — dividing by it produces a trend factor that is noise.
+  monitor_min_baseline_spend: 100,
+  // Days in the 14-day pre-window that must actually carry spend data. A
+  // window with 3 populated days isn't a trend, it's three points.
+  monitor_min_baseline_days: 7,
+  // Coefficient of variation (stddev / mean) of account daily spend across
+  // the pre-window. Above this the account is too volatile for its own mean
+  // to represent a "normal" level worth normalizing against. 1.0 = the
+  // day-to-day swing is as large as the average day itself.
+  monitor_max_baseline_cv: 1.0,
+
+  // Auto-flag triggers, evaluated on the NORMALIZED comparison specifically
+  // so a seasonal account-wide swing can't fire a false rollback alarm.
+  // Monitored campaign's trailing-7d ACOS deteriorating by more than this
+  // percent versus its pre-change baseline.
+  monitor_flag_acos_deterioration_pct: 25,
+  // A repriced target's impressions dropping by more than this percent —
+  // the "bid cut too deep" signal.
+  monitor_flag_impression_drop_pct: 80,
 } as const;
 
 export type RuleThresholdKey = keyof typeof RULE_THRESHOLD_DEFAULTS;

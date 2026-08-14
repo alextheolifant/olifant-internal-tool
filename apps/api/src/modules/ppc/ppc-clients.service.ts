@@ -10,6 +10,7 @@ import {
   syncLogs,
 } from '../../db/schema';
 import { MetricsService } from '../metrics/metrics.service';
+import { SavingsService } from './monitor/savings.service';
 import { computePpcConfigCompleteness, type ProductEconomicsCheck } from './ppc-completeness';
 import { classifyFreshness, FRESH_HOURS, type ClientFreshness, type FreshnessLevel } from './ppc-freshness';
 
@@ -42,13 +43,16 @@ export interface PpcClientRow {
   // ad spend vs. monthly_ad_budget from config. Always calendar-month-to-date,
   // independent of whatever date range the caller passed in.
   pacing: { spendMonthToDate: number; monthlyBudget: number; percent: number } | null;
-  // Deferred — needs the task layer / Ledger + Monitor / SP-API inventory
-  // (later phases). Rendered as unavailable, never fabricated as 0.
+  // Deferred — needs the task layer / SP-API inventory (later phases).
+  // Rendered as unavailable, never fabricated as 0.
   openTasks: null;
   dollarsAtStake: null;
-  verifiedSavingsPerMonth: null;
   guardActive: null;
   externalChanges30d: null;
+  // Real: this client's share of verified savings from concluded monitors
+  // (monitor/savings.service.ts). Null only while no monitor anywhere has
+  // concluded its 30-day window — "not measured yet", not "$0 saved".
+  verifiedSavingsPerMonth: number | null;
 }
 
 function num(v: string | null): number | null {
@@ -70,6 +74,7 @@ export class PpcClientsService {
     private readonly drizzle: DrizzleService,
     private readonly redis: RedisService,
     private readonly metricsService: MetricsService,
+    private readonly savings: SavingsService,
   ) {}
 
   async getClients(from: string, to: string, marketplace?: string): Promise<{ clients: PpcClientRow[] }> {
@@ -80,13 +85,17 @@ export class PpcClientsService {
     const metrics = await this.metricsService.getClientMetrics(from, to, marketplace);
     const clientIds: string[] = metrics.clients.map((c: { id: string }) => c.id);
 
-    const [configByClient, productsByClient, freshnessByClient, spendMtdByClient] =
+    const [configByClient, productsByClient, freshnessByClient, spendMtdByClient, savingsSummary] =
       await Promise.all([
         this.fetchConfigs(clientIds),
         this.fetchProducts(clientIds),
         this.fetchFreshness(clientIds),
         this.fetchSpendMonthToDate(clientIds, marketplace),
+        this.savings.getSummary(),
       ]);
+    const savingsByClient = new Map(
+      savingsSummary.byClient.map((s) => [s.clientId, s.verifiedSavingsMonthly]),
+    );
 
     const rows: PpcClientRow[] = metrics.clients.map(
       (c: {
@@ -133,9 +142,11 @@ export class PpcClientsService {
               : null,
           openTasks: null,
           dollarsAtStake: null,
-          verifiedSavingsPerMonth: null,
           guardActive: null,
           externalChanges30d: null,
+          verifiedSavingsPerMonth: savingsSummary.noConcludedMonitors
+            ? null
+            : (savingsByClient.get(c.id) ?? 0),
         };
       },
     );

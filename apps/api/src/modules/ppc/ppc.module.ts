@@ -4,6 +4,11 @@ import { EntityDiffService } from './entity-diff/entity-diff.service';
 import { LedgerController } from './ledger/ledger.controller';
 import { LedgerRepository } from './ledger/ledger.repository';
 import { LedgerService } from './ledger/ledger.service';
+import { MonitorController } from './monitor/monitor.controller';
+import { MonitorFactsRepository } from './monitor/monitor-facts.repository';
+import { MonitorRepository } from './monitor/monitor.repository';
+import { MonitorService } from './monitor/monitor.service';
+import { SavingsService } from './monitor/savings.service';
 import { PpcClientsController } from './ppc-clients.controller';
 import { PpcClientsService } from './ppc-clients.service';
 import { PpcConfigController } from './ppc-config.controller';
@@ -28,6 +33,7 @@ import { VerificationService } from './verification/verification.service';
   imports: [MetricsModule],
   controllers: [
     LedgerController,
+    MonitorController,
     PpcClientsController,
     PpcConfigController,
     ProductEconomicsController,
@@ -52,6 +58,10 @@ import { VerificationService } from './verification/verification.service';
     LedgerService,
     VerificationService,
     SlackNotifierService,
+    MonitorRepository,
+    MonitorFactsRepository,
+    MonitorService,
+    SavingsService,
   ],
 })
 export class PpcModule {}

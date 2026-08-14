@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, gte, lt } from 'drizzle-orm';
 import { DrizzleService } from '../../db/drizzle.service';
 import { clients, taskCandidates } from '../../db/schema';
+import { SavingsService } from './monitor/savings.service';
 import { REGISTERED_RULES } from './rules/rules.registry';
 import type { RuleDefinition } from './rules/types';
 
@@ -27,8 +28,14 @@ export interface TodayException {
 export interface TodayResponse {
   evaluationDate: string;
   statCards: {
-    // Ledger/Monitor doesn't exist yet — explicitly unavailable, never 0.
-    verifiedSavings: null;
+    // Real: agency-wide verified savings from concluded monitors (see
+    // monitor/savings.service.ts). $/month, conservative — only what each
+    // monitored entity's own before/after showed, net of account trend.
+    // Stays null ONLY while no monitor has concluded its 30-day window yet,
+    // which is a different statement from "$0 saved" and renders
+    // differently; verifiedSavingsPending distinguishes the two.
+    verifiedSavings: number | null;
+    verifiedSavingsPending: boolean;
     // STAND-IN: the task layer (dedup/scoring/enqueue) doesn't exist yet —
     // this is a raw task_candidates count, not deduplicated tasks.
     openTasksCount: number;
@@ -56,7 +63,10 @@ function dayBoundsUTC(evaluationDate: string): { start: Date; end: Date } {
 
 @Injectable()
 export class TodayService {
-  constructor(private readonly drizzle: DrizzleService) {}
+  constructor(
+    private readonly drizzle: DrizzleService,
+    private readonly savings: SavingsService,
+  ) {}
 
   async getToday(evaluationDate: string, clientIdFilter?: string): Promise<TodayResponse> {
     const { start, end } = dayBoundsUTC(evaluationDate);
@@ -98,10 +108,20 @@ export class TodayService {
       });
     }
 
+    // Agency-wide unless the caller scoped to one client, matching how the
+    // rest of this response already respects clientIdFilter.
+    const savings = clientIdFilter
+      ? await this.savings.getForClient(clientIdFilter)
+      : await (async () => {
+          const s = await this.savings.getSummary();
+          return { verifiedSavingsMonthly: s.agencyVerifiedSavingsMonthly, noConcludedMonitors: s.noConcludedMonitors };
+        })();
+
     return {
       evaluationDate,
       statCards: {
-        verifiedSavings: null,
+        verifiedSavings: savings.noConcludedMonitors ? null : savings.verifiedSavingsMonthly,
+        verifiedSavingsPending: savings.noConcludedMonitors,
         openTasksCount: rows.length,
         dollarsAtStake: null,
         exceptionsToday: dBandCount,
