@@ -8,6 +8,7 @@ import { CampaignMetricsRepository } from './campaign-metrics.repository';
 import { applyPersistenceAndHysteresis } from './persistence-hysteresis-guard';
 import { REGISTERED_RULES } from './rules.registry';
 import { RuleStateRepository } from './rule-state.repository';
+import { SearchTermRepository } from './search-term.repository';
 import { makeThresholdResolver } from './thresholds';
 import type { RuleEvalContext } from './types';
 
@@ -26,6 +27,7 @@ export class RuleRunnerService {
     private readonly campaignMetrics: CampaignMetricsRepository,
     private readonly ruleState: RuleStateRepository,
     private readonly ledgerRepo: LedgerRepository,
+    private readonly searchTermRepo: SearchTermRepository,
   ) {}
 
   // Core evaluation loop: iterate active clients -> evaluate each registered
@@ -49,6 +51,7 @@ export class RuleRunnerService {
         be,
         campaignMetrics: this.campaignMetrics,
         ledger: this.ledgerRepo,
+        searchTerms: this.searchTermRepo,
       };
 
       for (const rule of REGISTERED_RULES) {

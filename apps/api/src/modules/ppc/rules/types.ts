@@ -1,5 +1,6 @@
 import type { LedgerRepository } from '../ledger/ledger.repository';
 import type { CampaignMetricsRepository } from './campaign-metrics.repository';
+import type { SearchTermRepository } from './search-term.repository';
 
 export type RuleBand = 'D' | 'W' | 'S' | 'M' | 'I' | 'G';
 
@@ -26,6 +27,11 @@ export interface RuleEvalContext {
   // ledger.service.ts), not a rule condition computed from metrics like the
   // others here.
   ledger: LedgerRepository;
+  // Search-term / target grain, for W1. Separate from campaignMetrics
+  // because it reads entirely different fact tables
+  // (search_term_metrics_daily, target_metrics_daily) at a finer grain than
+  // anything the campaign-level rules need.
+  searchTerms: SearchTermRepository;
 }
 
 // One entity's condition reading for a given rule/evaluation. The rule

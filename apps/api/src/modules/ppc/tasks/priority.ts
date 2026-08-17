@@ -18,6 +18,7 @@ export const EST_MINUTES: Record<string, number> = {
   'D1:budget': 3, // single field edit
   'D4:investigate': 15, // pull two reports, identify the driver, apply a fix
   'D5:investigate': 15, // check status/budget/inventory across two consoles
+  'W1:negation': 4, // open one campaign's negatives tab, paste one exact term
 };
 
 const DEFAULT_EST_MINUTES = 15;

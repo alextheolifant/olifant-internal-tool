@@ -2,6 +2,7 @@ import { d1OutOfBudgetProfitableRule } from './d1-out-of-budget-profitable.rule'
 import { d3UnintendedPauseRule } from './d3-unintended-pause.rule';
 import { d4AcosBlowoutRule } from './d4-acos-blowout.rule';
 import { d5DeliveryStoppedRule } from './d5-delivery-stopped.rule';
+import { w1ZeroSaleNegationRule } from './w1-zero-sale-negation.rule';
 import type { RuleDefinition } from './types';
 
 // Adding a new rule is just pushing it here — nothing else in the runner
@@ -25,4 +26,5 @@ export const REGISTERED_RULES: RuleDefinition[] = [
   d3UnintendedPauseRule,
   d4AcosBlowoutRule,
   d5DeliveryStoppedRule,
+  w1ZeroSaleNegationRule,
 ];

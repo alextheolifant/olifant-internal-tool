@@ -30,6 +30,25 @@ function pct(v: unknown, digits = 1): string {
   return typeof v === 'number' ? v.toFixed(digits) : 'unknown';
 }
 
+// W1 helpers — the expectation figure and the winner list both need to read
+// as plain English inside an instruction step.
+function fmtExpected(evidence: Record<string, unknown>): string {
+  const v = num(evidence.expectedClicksPerOrder);
+  return v === null ? 'expected' : v.toFixed(1);
+}
+
+function describeWinners(winners: unknown[]): string {
+  return winners
+    .slice(0, 3)
+    .map((w) => {
+      const o = w as { kind?: string; campaignName?: string | null; campaignId?: string; orders?: number };
+      const where = o.campaignName ?? o.campaignId ?? 'another campaign';
+      const kind = o.kind === 'enabled_exact_target' ? 'enabled exact target' : 'search term';
+      return `${kind} in "${where}" with ${o.orders ?? 0} order(s)`;
+    })
+    .join('; ');
+}
+
 const TEMPLATES: Record<string, InstructionTemplate> = {
   // D1 — Out of budget, profitable: raise the daily budget by a stated
   // amount. Not yet exercised by real data (see d1-out-of-budget-profitable
@@ -54,6 +73,37 @@ const TEMPLATES: Record<string, InstructionTemplate> = {
     `Pause or reduce bids on the worst offenders you find. If no single driver stands out, reduce this campaign's overall budget or bids instead.`,
     MARK_EXECUTED,
   ],
+
+  // W1 — Zero-sale negation. Scoped to ONE campaign by construction; the
+  // instructions say so out loud, because the single most damaging way to
+  // execute this task wrong is to add the negative at account level or in
+  // the wrong campaign. The winner cross-check's finding is stated inline
+  // rather than left in evidence, since that's the context that stops
+  // someone broadening the negation while they're in the console.
+  'W1:negation': ({ action, evidence }) => {
+    const term = String(evidence.searchTerm ?? '');
+    const winners = Array.isArray(evidence.winnersElsewhere) ? evidence.winnersElsewhere : [];
+    const steps = [
+      `Open campaign '${action.campaignName}' in the Ads console.${action.adGroupId ? ` Go to ad group ${action.adGroupId}.` : ''}`,
+      `Open the Negative keywords tab.`,
+      `Add a negative keyword with match type "Negative exact" and text exactly: ${term}`,
+      `This term took ${String(evidence.clicks)} clicks and $${money(num(evidence.cost))} with 0 orders between ${String(evidence.windowStart)} and ${String(evidence.windowEnd)}. That is ${pct(evidence.clicksMultiple, 1)}× the ${fmtExpected(evidence)} clicks-per-order expected for this ${String(evidence.expectationBasis ?? 'ad group')}, with nothing to show for it.`,
+    ];
+
+    if (winners.length > 0) {
+      steps.push(
+        `HEADS UP — this exact term IS converting elsewhere in this account (${winners.length} place(s): ${describeWinners(winners)}). ` +
+          `Add the negative ONLY in '${action.campaignName}'. Do not add it at account level and do not add it in those campaigns, or you will kill working traffic.`,
+      );
+    } else {
+      steps.push(
+        `The winner cross-check found this term converting nowhere else in the account. Still add the negative only in '${action.campaignName}' — W1 never proposes account-wide negation.`,
+      );
+    }
+
+    steps.push(`Save.`, MARK_EXECUTED);
+    return steps;
+  },
 
   // D3 — Unintended pause: the pause itself is a hard fact from the diff
   // engine (see d3-unintended-pause.rule.ts), but WHY it happened isn't —

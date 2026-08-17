@@ -156,6 +156,51 @@ const MAPPERS: Record<string, Mapper> = {
     };
   },
 
+  // W1 — Zero-sale negation. The proposed action is a NEGATIVE EXACT keyword
+  // in one campaign, never account-wide (see w1-zero-sale-negation.rule.ts's
+  // Guard 1). entityId here is the composite (campaign::term) id, so the
+  // term is read from evidence rather than parsed back out of it.
+  W1: (evidence) => {
+    const term = str(evidence.searchTerm, 'unknown term');
+    const campaignName = str(evidence.campaignName);
+    const campaignId = str(evidence.campaignId, '');
+    const adGroupId = typeof evidence.adGroupId === 'string' ? evidence.adGroupId : null;
+    const clicks = num(evidence.clicks) ?? 0;
+    const cost = num(evidence.cost) ?? 0;
+    const expected = num(evidence.expectedClicksPerOrder);
+    const monthlyWaste = num(evidence.monthlyWaste);
+    const winners = Array.isArray(evidence.winnersElsewhere) ? evidence.winnersElsewhere : [];
+
+    // Confidence reflects how far past the bar the term is, and whether the
+    // winner cross-check found competing evidence. A term converting
+    // elsewhere isn't a reason NOT to negate it here — the per-campaign
+    // failure is real — but it is a reason for a human to look before
+    // acting, so it caps confidence at medium.
+    const ratio = expected !== null && expected > 0 ? clicks / expected : null;
+    const confidence: TaskConfidence =
+      winners.length > 0 ? 'medium' : ratio !== null && ratio >= 4 ? 'high' : 'medium';
+
+    return {
+      type: 'negation',
+      title: `Zero-sale term — negate "${term}" in "${campaignName}" (${clicks} clicks, $${cost.toFixed(2)}, 0 orders)`,
+      action: {
+        entityType: 'search_term',
+        campaignId,
+        campaignName,
+        adGroupId,
+        // The term isn't currently negated; the proposed state is a negative
+        // exact keyword. oldValue/newValue describe that transition.
+        oldValue: null,
+        newValue: 'NEGATIVE_EXACT',
+        field: 'negative_keyword',
+      },
+      rollback: `Remove the negative exact keyword "${term}" from ${adGroupId ? `ad group ${adGroupId} in ` : ''}campaign "${campaignName}".`,
+      impactMonthlyUsd: monthlyWaste,
+      impactBasis: `${String(evidence.windowStart)}–${String(evidence.windowEnd)} spend on this term with zero orders, expressed as a monthly run-rate`,
+      confidence,
+    };
+  },
+
   D3: (evidence, entityId) => {
     const campaignName = str(evidence.campaignName);
     const oldValue = evidence.oldValue;

@@ -19,6 +19,7 @@ import { CampaignMetricsRepository } from './rules/campaign-metrics.repository';
 import { RuleRunnerController } from './rules/rule-runner.controller';
 import { RuleRunnerService } from './rules/rule-runner.service';
 import { RuleStateRepository } from './rules/rule-state.repository';
+import { SearchTermRepository } from './rules/search-term.repository';
 import { EvidenceProvenanceResolver } from './tasks/evidence';
 import { TaskIdRepository } from './tasks/task-id.repository';
 import { TaskPromotionService } from './tasks/task-promotion.service';
@@ -47,6 +48,7 @@ import { VerificationService } from './verification/verification.service';
     ProductEconomicsService,
     CampaignMetricsRepository,
     RuleStateRepository,
+    SearchTermRepository,
     RuleRunnerService,
     EvidenceProvenanceResolver,
     TaskIdRepository,

@@ -8,6 +8,7 @@ import {
   searchTermMetricsDaily,
   targetMetricsDaily,
 } from '../../../db/schema';
+import { parseSearchTermEntityId } from '../rules/term-normalization';
 import type { DailyFactRow } from './normalization';
 
 // ─── Monitor fact access ────────────────────────────────────────────────────
@@ -154,6 +155,15 @@ export class MonitorFactsRepository {
     }
 
     if (entityType === 'search_term') {
+      // W1 (the only producer of search_term entities) keys them on the
+      // composite "<campaignId>::<verbatim term>" so the same term stays
+      // distinct per campaign — see term-normalization.ts's
+      // searchTermEntityId. Fall back to treating the whole id as the term
+      // for any entity written before that convention existed.
+      const parsed = parseSearchTermEntityId(entityId);
+      const term = parsed?.term ?? entityId;
+      const scopedCampaignId = parsed?.campaignId ?? campaignId;
+
       const rows = await this.drizzle.db
         .select({
           date: searchTermMetricsDaily.date,
@@ -167,8 +177,8 @@ export class MonitorFactsRepository {
         .where(
           and(
             inArray(searchTermMetricsDaily.amazonAdsAccountId, accountIds),
-            eq(searchTermMetricsDaily.searchTerm, entityId),
-            eq(searchTermMetricsDaily.campaignId, campaignId),
+            eq(searchTermMetricsDaily.searchTerm, term),
+            eq(searchTermMetricsDaily.campaignId, scopedCampaignId),
             gte(searchTermMetricsDaily.date, start),
             lte(searchTermMetricsDaily.date, end),
           ),

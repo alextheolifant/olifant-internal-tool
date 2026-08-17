@@ -17,6 +17,28 @@ export const RULE_THRESHOLD_DEFAULTS = {
   // before, not just newly launched or always-quiet.
   d5_meaningful_impressions: 10,
 
+  // ── W1: zero-sale negation ───────────────────────────────────────────────
+  // Trigger multiple: a term must have at least this many times the expected
+  // clicks-per-order, with zero orders, before it's considered wasting.
+  w1_clicks_multiple: 2.0,
+  // Trailing window (days) the term's clicks/orders are measured over.
+  w1_window_days: 30,
+  // Trailing window (days) used to derive expected_clicks_per_order from the
+  // ad group's (or campaign's) own history. Longer than the trigger window
+  // on purpose — the expectation should be a stable property of the
+  // population, not a reading of the same 30 days being judged.
+  w1_expectation_window_days: 60,
+  // Thin-data floor for expected_clicks_per_order. Below EITHER of these in
+  // both the ad group and its campaign, W1 does not evaluate the term at all
+  // rather than negating on an unreliable expectation (see
+  // expected-clicks-per-order.ts).
+  w1_expectation_min_orders: 10,
+  w1_expectation_min_clicks: 30,
+  // Guard 3: hold if this share or more of the term's clicks fall inside the
+  // 14-day restatement window. Passed straight to the existing
+  // checkSettledData guard, whose own default happens to match.
+  w1_recent_click_share_hold: 0.5,
+
   // ── Monitor (post-change feedback loop) ──────────────────────────────────
   // What makes an account's trend baseline usable for difference-in-
   // differences normalization. Failing ANY of the three means the verdict
