@@ -80,8 +80,9 @@ export class TaskPromotionService {
         oldValue: content.action.oldValue,
       });
 
-      const { provenance, profile } = await this.provenance.resolveForCampaign(
+      const { provenance, profile } = await this.provenance.resolveForEntity(
         candidate.clientId,
+        candidate.entityType,
         candidate.entityId,
       );
       const evidence = buildEvidence(candidate.evidence as Record<string, unknown>, provenance);

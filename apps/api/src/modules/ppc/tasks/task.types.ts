@@ -69,6 +69,11 @@ export interface TaskEvidenceProvenance {
   // entity's metrics — null when none could be resolved (see evidence.ts).
   reportJobId: string | null;
   syncedAt: string | null; // ISO timestamp of that sync's completion
+  // Which sync produced these metrics, and therefore which fact table holds
+  // the daily rows behind them. This is what lets GET /:id/facts resolve a
+  // source table from provenance instead of a per-rule mapping — see
+  // fact-source.ts.
+  syncType: string | null;
 }
 
 export interface TaskEvidence {

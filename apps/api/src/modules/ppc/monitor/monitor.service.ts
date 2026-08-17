@@ -304,7 +304,10 @@ export class MonitorService {
         provisional: verdict.provisional,
       },
       window: { start: verdict.window.postStart, end: verdict.window.postEnd },
-      provenance: { reportJobId: null, syncedAt: null },
+      // A monitor-raised review task isn't sourced from a sync report — its
+      // evidence is the monitor's own verdict, so there's no fact table to
+      // resolve and no report job to cite.
+      provenance: { reportJobId: null, syncedAt: null, syncType: null },
       fallbacks: {},
     };
 

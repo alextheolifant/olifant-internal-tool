@@ -23,6 +23,7 @@ import { SearchTermRepository } from './rules/search-term.repository';
 import { EvidenceProvenanceResolver } from './tasks/evidence';
 import { TaskIdRepository } from './tasks/task-id.repository';
 import { TaskPromotionService } from './tasks/task-promotion.service';
+import { QueueService } from './tasks/queue.service';
 import { TaskRepository } from './tasks/task.repository';
 import { TasksController } from './tasks/tasks.controller';
 import { TodayController } from './today.controller';
@@ -54,6 +55,7 @@ import { VerificationService } from './verification/verification.service';
     TaskIdRepository,
     TaskRepository,
     TaskPromotionService,
+    QueueService,
     TodayService,
     EntityDiffService,
     LedgerRepository,

@@ -1,11 +1,24 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { LedgerService } from '../ledger/ledger.service';
 import { VerificationService } from '../verification/verification.service';
+import { QueueService } from './queue.service';
+import type { BulkApproveResponse, BulkApproveResult } from './queue.types';
 import { assertValidTransition, InvalidTaskTransitionError } from './task-lifecycle';
 import { TaskPromotionService } from './task-promotion.service';
 import { TaskRepository } from './task.repository';
-import type { TaskAction, TaskDismissReason, TaskStatus } from './task.types';
+import type { TaskAction, TaskDismissReason, TaskStatus, TaskType } from './task.types';
 
 function assertValidTransitionOrBadRequest(from: TaskStatus, to: TaskStatus): void {
   try {
@@ -22,10 +35,6 @@ function assertValidTransitionOrBadRequest(from: TaskStatus, to: TaskStatus): vo
 // in by a human.
 const SYSTEM_ONLY_STATUSES: TaskStatus[] = ['executed', 'verified', 'verify_failed'];
 
-// No UI consumes this yet — this task is the task LAYER, not the screen.
-// Exists so the promotion/lifecycle logic is invokable for testing and for
-// whatever screen/scheduler wires into it next, same convention as
-// RuleRunnerController.
 @Controller('ppc/tasks')
 @UseGuards(JwtAuthGuard)
 export class TasksController {
@@ -34,7 +43,10 @@ export class TasksController {
     private readonly taskRepo: TaskRepository,
     private readonly verification: VerificationService,
     private readonly ledger: LedgerService,
+    private readonly queue: QueueService,
   ) {}
+
+  // ─── Pipeline triggers (no scheduler in this slice) ─────────────────────
 
   @Post('promote')
   promote() {
@@ -48,41 +60,129 @@ export class TasksController {
     return { expiredOnClear, expiredOnCeiling };
   }
 
+  @Post('verify')
+  verify() {
+    return this.verification.verifyExecutedTasks();
+  }
+
+  // ─── Part 1 — queue list ────────────────────────────────────────────────
+  // Filters are all optional and combinable. Ordering (D-band above every
+  // other band, then priority score descending) comes from the task layer's
+  // own tier expression — see TaskRepository.queryQueue.
   @Get()
-  list(@Query('clientId') clientId?: string) {
-    return this.taskRepo.listSorted(clientId);
+  list(
+    @Query('clientId') clientId?: string,
+    @Query('type') type?: TaskType,
+    @Query('status') status?: TaskStatus,
+    @Query('assignee') assignee?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.queue.list({
+      clientId,
+      type,
+      status,
+      assignee,
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
+    });
   }
 
-  @Get(':id')
-  get(@Param('id') id: string) {
-    return this.taskRepo.findById(id);
-  }
-
-  @Patch(':id/status')
-  async setStatus(@Param('id') id: string, @Body('status') status: TaskStatus) {
-    if (SYSTEM_ONLY_STATUSES.includes(status)) {
-      throw new BadRequestException(
-        status === 'executed'
-          ? `'executed' requires confirming a value — use POST /ppc/tasks/${id}/execute instead.`
-          : `'${status}' is set by the verification job, not directly.`,
-      );
+  // ─── Part 5 — bulk approve ──────────────────────────────────────────────
+  // Declared before ':id' routes so "bulk-approve" isn't captured as an id.
+  //
+  // Every id is validated against the state machine independently and one
+  // bad id never fails the batch — the UI acts on a filtered set and needs
+  // to know precisely which rows moved.
+  @Post('bulk-approve')
+  async bulkApprove(@Body('ids') ids: string[]): Promise<BulkApproveResponse> {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new BadRequestException('ids must be a non-empty array of task ids');
     }
+
+    const results: BulkApproveResult[] = [];
+    for (const id of ids) {
+      const task = await this.taskRepo.findById(id);
+      if (!task) {
+        results.push({ id, ok: false, status: null, error: 'not found' });
+        continue;
+      }
+      try {
+        assertValidTransition(task.status, 'approved');
+      } catch (err) {
+        results.push({
+          id,
+          ok: false,
+          status: task.status,
+          error: err instanceof InvalidTaskTransitionError ? err.message : String(err),
+        });
+        continue;
+      }
+      await this.taskRepo.approve(id);
+      results.push({ id, ok: true, status: 'approved', error: null });
+    }
+
+    return {
+      approved: results.filter((r) => r.ok).length,
+      failed: results.filter((r) => !r.ok).length,
+      results,
+    };
+  }
+
+  // ─── Part 2 — drawer detail ─────────────────────────────────────────────
+  @Get(':id')
+  async get(@Param('id') id: string) {
+    const detail = await this.queue.detail(id);
+    if (!detail) throw new NotFoundException(`No task ${id}`);
+    return detail;
+  }
+
+  // ─── Part 3 — monitor series ────────────────────────────────────────────
+  @Get(':id/performance')
+  async performance(@Param('id') id: string) {
     const task = await this.taskRepo.findById(id);
-    if (!task) return { error: 'not found' };
-    assertValidTransitionOrBadRequest(task.status, status);
-    await this.taskRepo.setStatus(id, status);
-    return this.taskRepo.findById(id);
+    if (!task) throw new NotFoundException(`No task ${id}`);
+    const result = await this.queue.performance(id);
+    if (!result) {
+      // A task with no monitor hasn't been executed — say so plainly rather
+      // than returning empty series the UI would draw as flat lines.
+      return {
+        taskId: id,
+        available: false,
+        reason: `Task is '${task.status}' and has no monitor — performance is only tracked once a task is executed.`,
+      };
+    }
+    return { available: true, ...result };
+  }
+
+  // ─── Part 4 — clickable evidence ────────────────────────────────────────
+  @Get(':id/facts')
+  async facts(@Param('id') id: string, @Query('metric') metric: string) {
+    if (!metric) throw new BadRequestException('metric query parameter is required');
+    const result = await this.queue.facts(id, metric);
+    if (!result) throw new NotFoundException(`No task ${id}`);
+    return result;
+  }
+
+  // ─── Part 5 — action endpoints ──────────────────────────────────────────
+
+  @Post(':id/approve')
+  async approve(@Param('id') id: string) {
+    const task = await this.taskRepo.findById(id);
+    if (!task) throw new NotFoundException(`No task ${id}`);
+    assertValidTransitionOrBadRequest(task.status, 'approved');
+    await this.taskRepo.approve(id);
+    return this.queue.detail(id);
   }
 
   // Marking executed requires confirming the value (§8.3) — pre-filled from
   // action.newValue on the client, but what's stored is whatever the
   // executor actually confirms, since it may differ from what was proposed.
-  // Required whenever the action has a field to confirm; omitted/ignored for
-  // diagnostic tasks (action.field null) that have nothing to confirm.
+  // Delegates storage to the execution/verification loop's own path.
   @Post(':id/execute')
   async execute(@Param('id') id: string, @Body('confirmedValue') confirmedValue?: string | number | null) {
     const task = await this.taskRepo.findById(id);
-    if (!task) return { error: 'not found' };
+    if (!task) throw new NotFoundException(`No task ${id}`);
     assertValidTransitionOrBadRequest(task.status, 'executed');
 
     const action = task.action as TaskAction;
@@ -95,12 +195,39 @@ export class TasksController {
     await this.taskRepo.confirmExecution(id, action.field ? String(confirmedValue) : null);
     const updated = await this.taskRepo.findById(id);
     if (updated) await this.ledger.recordEngineChange(updated);
-    return updated;
+    return this.queue.detail(id);
   }
 
-  @Post('verify')
-  verify() {
-    return this.verification.verifyExecutedTasks();
+  @Post(':id/dismiss')
+  async dismissPost(
+    @Param('id') id: string,
+    @Body('reason') reason: TaskDismissReason,
+    @Body('note') note?: string,
+  ) {
+    if (!reason) throw new BadRequestException('reason is required to dismiss a task');
+    const task = await this.taskRepo.findById(id);
+    if (!task) throw new NotFoundException(`No task ${id}`);
+    assertValidTransitionOrBadRequest(task.status, 'dismissed');
+    await this.taskRepo.dismiss(id, reason, note ?? null);
+    return this.queue.detail(id);
+  }
+
+  // ─── Pre-existing transition endpoints ──────────────────────────────────
+
+  @Patch(':id/status')
+  async setStatus(@Param('id') id: string, @Body('status') status: TaskStatus) {
+    if (SYSTEM_ONLY_STATUSES.includes(status)) {
+      throw new BadRequestException(
+        status === 'executed'
+          ? `'executed' requires confirming a value — use POST /ppc/tasks/${id}/execute instead.`
+          : `'${status}' is set by the verification job, not directly.`,
+      );
+    }
+    const task = await this.taskRepo.findById(id);
+    if (!task) throw new NotFoundException(`No task ${id}`);
+    assertValidTransitionOrBadRequest(task.status, status);
+    await this.taskRepo.setStatus(id, status);
+    return this.taskRepo.findById(id);
   }
 
   @Patch(':id/dismiss')
@@ -109,10 +236,6 @@ export class TasksController {
     @Body('reason') reason: TaskDismissReason,
     @Body('note') note?: string,
   ) {
-    const task = await this.taskRepo.findById(id);
-    if (!task) return { error: 'not found' };
-    assertValidTransitionOrBadRequest(task.status, 'dismissed');
-    await this.taskRepo.dismiss(id, reason, note ?? null);
-    return this.taskRepo.findById(id);
+    return this.dismissPost(id, reason, note);
   }
 }

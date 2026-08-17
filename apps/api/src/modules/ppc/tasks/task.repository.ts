@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import { DrizzleService } from '../../../db/drizzle.service';
-import { tasks } from '../../../db/schema';
+import { clients, tasks } from '../../../db/schema';
 import { OPEN_STATUSES } from './task-lifecycle';
 import type {
   TaskAction,
@@ -203,5 +203,65 @@ export class TaskRepository {
       .from(tasks)
       .where(clientId ? and(eq(tasks.clientId, clientId), inArray(tasks.status, OPEN_STATUSES)) : inArray(tasks.status, OPEN_STATUSES))
       .orderBy(asc(bandTier), desc(tasks.priorityScore));
+  }
+
+  // ─── Queue list (Part 1) ──────────────────────────────────────────────────
+  // Same ordering contract as listSorted above — D-band first, then score
+  // descending — reusing the identical band-tier expression rather than
+  // re-deriving the rule. Adds combinable filters, a client-name join, and
+  // paging with a total count (bulk-approve acts on a filtered set, so the
+  // count must reflect the filters and ignore the page).
+  async queryQueue(filters: {
+    clientId?: string;
+    type?: TaskType;
+    status?: TaskStatus;
+    assignee?: string;
+    limit: number;
+    offset: number;
+  }): Promise<{ rows: (TaskRow & { clientName: string })[]; total: number }> {
+    const conditions = [];
+    if (filters.clientId) conditions.push(eq(tasks.clientId, filters.clientId));
+    if (filters.type) conditions.push(eq(tasks.type, filters.type));
+    if (filters.assignee) conditions.push(eq(tasks.assignee, filters.assignee));
+    // An explicit status filter selects exactly that status; without one the
+    // queue shows the open set, matching what the table is for.
+    conditions.push(filters.status ? eq(tasks.status, filters.status) : inArray(tasks.status, OPEN_STATUSES));
+
+    const where = and(...conditions);
+    const bandTier = sql<number>`case when ${tasks.band} = 'D' then 0 else 1 end`;
+
+    const [rows, [countRow]] = await Promise.all([
+      this.drizzle.db
+        .select({ task: tasks, clientName: clients.name })
+        .from(tasks)
+        .innerJoin(clients, eq(clients.id, tasks.clientId))
+        .where(where)
+        .orderBy(asc(bandTier), desc(tasks.priorityScore))
+        .limit(filters.limit)
+        .offset(filters.offset),
+      this.drizzle.db.select({ n: sql<string>`count(*)` }).from(tasks).where(where),
+    ]);
+
+    return {
+      rows: rows.map((r) => ({ ...r.task, clientName: r.clientName })),
+      total: Number(countRow?.n ?? 0),
+    };
+  }
+
+  async findByIdWithClient(id: string): Promise<(TaskRow & { clientName: string }) | undefined> {
+    const [row] = await this.drizzle.db
+      .select({ task: tasks, clientName: clients.name })
+      .from(tasks)
+      .innerJoin(clients, eq(clients.id, tasks.clientId))
+      .where(eq(tasks.id, id))
+      .limit(1);
+    return row ? { ...row.task, clientName: row.clientName } : undefined;
+  }
+
+  async approve(id: string): Promise<void> {
+    await this.drizzle.db
+      .update(tasks)
+      .set({ status: 'approved', updatedAt: new Date() })
+      .where(eq(tasks.id, id));
   }
 }
