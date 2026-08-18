@@ -15,7 +15,17 @@ import (
 const (
 	syncTypeSpOrders = "sp_orders"
 
-	phase1Concurrency = 5
+	// createReport is quota-limited per MINUTE with only a small burst
+	// allowance, so parallel submissions do nothing but drain that burst
+	// faster and turn the whole run into 429s. Serialised and paced instead:
+	// throughput here is set by Amazon's quota, not by our concurrency.
+	phase1Concurrency = 1
+	// Minimum spacing between two createReport calls. Deliberately a little
+	// under the documented ~1/min so a run isn't slower than it must be —
+	// withRetry still honours Amazon's own Retry-After if we do overshoot
+	// (see client.go), so this is pacing, not the safety net.
+	phase1RequestSpacing = 50 * time.Second
+
 	phase2Concurrency = 10
 	pollInterval      = 5 * time.Minute
 	maxWait           = 16 * time.Minute // real reports take ~10 min; give 16 min headroom
@@ -90,6 +100,11 @@ func (o *SalesOrchestrator) SyncSales(ctx context.Context, accounts []db.SpAccou
 	outCh := make(chan phase1Out, len(accounts))
 	var wg sync.WaitGroup
 
+	// Paces createReport submissions across all accounts. Stopped on return
+	// so a short run doesn't leak the ticker.
+	submitTicker := time.NewTicker(phase1RequestSpacing)
+	defer submitTicker.Stop()
+
 	log.Printf("Phase 1: submitting sales report requests for %d accounts (start=%s end=%s)",
 		len(contexts), startDate, endDate)
 
@@ -131,6 +146,17 @@ func (o *SalesOrchestrator) SyncSales(ctx context.Context, accounts []db.SpAccou
 			if err != nil {
 				_ = o.writer.CompleteSyncFailure(ctx, logID, 0, err.Error())
 				out.err = fmt.Errorf("get token: %w", err)
+				outCh <- out
+				return
+			}
+
+			// Wait for this account's turn in the quota. The first
+			// submission still pays one tick — cheap insurance against a
+			// previous run having already drained the burst allowance.
+			select {
+			case <-submitTicker.C:
+			case <-ctx.Done():
+				out.err = ctx.Err()
 				outCh <- out
 				return
 			}

@@ -8,15 +8,23 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	tokenURL    = "https://api.amazon.com/auth/o2/token"
-	maxRetries  = 3
+	tokenURL = "https://api.amazon.com/auth/o2/token"
+	// SP-API's report endpoints are quota-limited per MINUTE, not per second
+	// (createReport is roughly 1 req/min with a small burst). A ladder that
+	// tops out in milliseconds finishes every attempt inside a single
+	// rejected window and reports "exceeded N retries" without ever having
+	// waited long enough to matter — so the ceiling is minutes, and the real
+	// wait comes from Amazon's own headers whenever it supplies them.
+	maxRetries  = 5
 	baseBackoff = 500 * time.Millisecond
+	maxBackoff  = 5 * time.Minute
 )
 
 // Region represents one of Amazon's three SP-API regional endpoints. These
@@ -72,24 +80,65 @@ type TokenResponse struct {
 	ExpiresIn   int    `json:"expires_in"`
 }
 
-// retryableError marks an error as worth retrying (429 or 5xx).
-type retryableError struct{ err error }
+// retryableError marks an error as worth retrying (429 or 5xx). retryAfter
+// carries Amazon's own instruction for how long to wait, when the response
+// supplied one; 0 means "no hint, fall back to the exponential ladder".
+type retryableError struct {
+	err        error
+	retryAfter time.Duration
+}
 
 func (e *retryableError) Error() string { return e.err.Error() }
 func (e *retryableError) Unwrap() error { return e.err }
 
-// withRetry calls fn up to maxRetries+1 times, backing off exponentially
-// (500ms, 1s, 2s) between attempts. Only errors wrapped as *retryableError
-// trigger a retry; any other error returns immediately.
+// retryAfterFrom reads how long Amazon wants us to wait, rather than
+// guessing. Preferring the live headers over a hardcoded number keeps this
+// correct even when Amazon revises its published quotas — which it does.
+func retryAfterFrom(resp *http.Response) time.Duration {
+	if v := resp.Header.Get("Retry-After"); v != "" {
+		if secs, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	// x-amzn-RateLimit-Limit is a rate in requests per second (e.g.
+	// "0.0167"). Its reciprocal is the minimum spacing between two calls to
+	// that endpoint, which is exactly how long a rejected call must wait.
+	if v := resp.Header.Get("x-amzn-RateLimit-Limit"); v != "" {
+		if rate, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && rate > 0 {
+			return time.Duration(float64(time.Second) / rate)
+		}
+	}
+	return 0
+}
+
+// newRetryable builds a retryable error that carries the response's own
+// wait hint. Use this at every 429/5xx site so the hint is never dropped.
+func newRetryable(resp *http.Response, format string, args ...any) *retryableError {
+	return &retryableError{err: fmt.Errorf(format, args...), retryAfter: retryAfterFrom(resp)}
+}
+
+// withRetry calls fn up to maxRetries+1 times. Only errors wrapped as
+// *retryableError trigger a retry; any other error returns immediately.
+//
+// Wait duration comes from the failed response itself whenever Amazon
+// supplied Retry-After or x-amzn-RateLimit-Limit, and falls back to the
+// exponential ladder (500ms, 1s, 2s, …) otherwise. Either way it is capped
+// at maxBackoff so a nonsense header can't park a worker for hours.
 func withRetry[T any](ctx context.Context, fn func() (T, error)) (T, error) {
 	var zero T
 	var lastErr error
+	var wait time.Duration
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
-			backoff := time.Duration(float64(baseBackoff) * math.Pow(2, float64(attempt-1)))
+			if wait <= 0 {
+				wait = time.Duration(float64(baseBackoff) * math.Pow(2, float64(attempt-1)))
+			}
+			if wait > maxBackoff {
+				wait = maxBackoff
+			}
 			select {
-			case <-time.After(backoff):
+			case <-time.After(wait):
 			case <-ctx.Done():
 				return zero, ctx.Err()
 			}
@@ -105,6 +154,7 @@ func withRetry[T any](ctx context.Context, fn func() (T, error)) (T, error) {
 			return zero, err
 		}
 		lastErr = re.err
+		wait = re.retryAfter
 	}
 
 	return zero, fmt.Errorf("exceeded %d retries: %w", maxRetries, lastErr)
@@ -139,7 +189,7 @@ func (c *Client) ExchangeRefreshToken(ctx context.Context) (*TokenResponse, erro
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, &retryableError{fmt.Errorf("token request failed: %w", err)}
+			return nil, &retryableError{err: fmt.Errorf("token request failed: %w", err)}
 		}
 		defer resp.Body.Close()
 
@@ -149,7 +199,7 @@ func (c *Client) ExchangeRefreshToken(ctx context.Context) (*TokenResponse, erro
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-			return nil, &retryableError{fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, body)}
+			return nil, newRetryable(resp, "token endpoint returned %d: %s", resp.StatusCode, body)
 		}
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, body)

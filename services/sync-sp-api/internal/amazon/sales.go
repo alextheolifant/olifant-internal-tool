@@ -69,13 +69,13 @@ func (c *Client) RequestReport(ctx context.Context, accessToken string, region R
 
 		httpResp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, &retryableError{fmt.Errorf("http: %w", err)}
+			return nil, &retryableError{err: fmt.Errorf("http: %w", err)}
 		}
 		defer httpResp.Body.Close()
 
 		b, _ := io.ReadAll(httpResp.Body)
 		if httpResp.StatusCode == http.StatusTooManyRequests || httpResp.StatusCode >= 500 {
-			return nil, &retryableError{fmt.Errorf("status %d: %s", httpResp.StatusCode, b)}
+			return nil, newRetryable(httpResp, "status %d: %s", httpResp.StatusCode, b)
 		}
 		if httpResp.StatusCode != http.StatusOK && httpResp.StatusCode != http.StatusAccepted {
 			return nil, fmt.Errorf("status %d: %s", httpResp.StatusCode, b)
@@ -104,13 +104,13 @@ func (c *Client) GetReportStatus(ctx context.Context, accessToken string, region
 
 		httpResp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, &retryableError{fmt.Errorf("http: %w", err)}
+			return nil, &retryableError{err: fmt.Errorf("http: %w", err)}
 		}
 		defer httpResp.Body.Close()
 
 		b, _ := io.ReadAll(httpResp.Body)
 		if httpResp.StatusCode == http.StatusTooManyRequests || httpResp.StatusCode >= 500 {
-			return nil, &retryableError{fmt.Errorf("status %d: %s", httpResp.StatusCode, b)}
+			return nil, newRetryable(httpResp, "status %d: %s", httpResp.StatusCode, b)
 		}
 		if httpResp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("status %d: %s", httpResp.StatusCode, b)
@@ -157,13 +157,13 @@ func (c *Client) DownloadReportDocument(ctx context.Context, accessToken string,
 
 		httpResp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, &retryableError{fmt.Errorf("http: %w", err)}
+			return nil, &retryableError{err: fmt.Errorf("http: %w", err)}
 		}
 		defer httpResp.Body.Close()
 
 		b, _ := io.ReadAll(httpResp.Body)
 		if httpResp.StatusCode == http.StatusTooManyRequests || httpResp.StatusCode >= 500 {
-			return nil, &retryableError{fmt.Errorf("status %d: %s", httpResp.StatusCode, b)}
+			return nil, newRetryable(httpResp, "status %d: %s", httpResp.StatusCode, b)
 		}
 		if httpResp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("status %d: %s", httpResp.StatusCode, b)
@@ -187,12 +187,12 @@ func (c *Client) DownloadReportDocument(ctx context.Context, accessToken string,
 		}
 		httpResp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, &retryableError{fmt.Errorf("download http: %w", err)}
+			return nil, &retryableError{err: fmt.Errorf("download http: %w", err)}
 		}
 		defer httpResp.Body.Close()
 
 		if httpResp.StatusCode == http.StatusTooManyRequests || httpResp.StatusCode >= 500 {
-			return nil, &retryableError{fmt.Errorf("download status %d", httpResp.StatusCode)}
+			return nil, newRetryable(httpResp, "download status %d", httpResp.StatusCode)
 		}
 		if httpResp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("download status %d", httpResp.StatusCode)

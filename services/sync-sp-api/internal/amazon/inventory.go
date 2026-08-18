@@ -70,13 +70,13 @@ func (c *Client) GetInventorySummaries(ctx context.Context, accessToken string, 
 
 		httpResp, err := c.httpClient.Do(req)
 		if err != nil {
-			return inventoryPage{}, &retryableError{fmt.Errorf("http: %w", err)}
+			return inventoryPage{}, &retryableError{err: fmt.Errorf("http: %w", err)}
 		}
 		defer httpResp.Body.Close()
 
 		b, _ := io.ReadAll(httpResp.Body)
 		if httpResp.StatusCode == http.StatusTooManyRequests || httpResp.StatusCode >= 500 {
-			return inventoryPage{}, &retryableError{fmt.Errorf("status %d: %s", httpResp.StatusCode, b)}
+			return inventoryPage{}, newRetryable(httpResp, "status %d: %s", httpResp.StatusCode, b)
 		}
 		if httpResp.StatusCode != http.StatusOK {
 			return inventoryPage{}, fmt.Errorf("status %d: %s", httpResp.StatusCode, b)
