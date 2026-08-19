@@ -112,21 +112,47 @@ docker run --rm \
   --entrypoint /sync-campaigns \
   olifant-sync-ads-api
 
-# ads-api: metrics (date range, defaults to last 30 days; also needs ClickHouse)
+# ads-api: metrics — campaigns report (date range, defaults to last 30 days;
+# also needs ClickHouse). -report defaults to "campaigns"; omit it for this one.
 docker run --rm \
   -e DATABASE_URL -e ADS_CLIENT_ID -e ADS_CLIENT_SECRET -e SP_TOKEN_ENCRYPTION_KEY -e CLICKHOUSE_URL \
   --entrypoint /sync-metrics \
   olifant-sync-ads-api \
   -start 2026-07-26 -end 2026-07-29
 
+# ads-api: metrics — search term report (writes search_term_metrics_daily,
+# Postgres only — does not touch ClickHouse)
+docker run --rm \
+  -e DATABASE_URL -e ADS_CLIENT_ID -e ADS_CLIENT_SECRET -e SP_TOKEN_ENCRYPTION_KEY \
+  --entrypoint /sync-metrics \
+  olifant-sync-ads-api \
+  -report searchTerm -start 2026-07-26 -end 2026-07-29
+
+# ads-api: metrics — targeting report (writes target_metrics_daily, Postgres only)
+docker run --rm \
+  -e DATABASE_URL -e ADS_CLIENT_ID -e ADS_CLIENT_SECRET -e SP_TOKEN_ENCRYPTION_KEY \
+  --entrypoint /sync-metrics \
+  olifant-sync-ads-api \
+  -report targeting -start 2026-07-26 -end 2026-07-29
+
 # ads-api: retry failed report requests (also needs ClickHouse)
 docker run --rm \
   -e DATABASE_URL -e ADS_CLIENT_ID -e ADS_CLIENT_SECRET -e SP_TOKEN_ENCRYPTION_KEY -e CLICKHOUSE_URL \
   --entrypoint /retry-reports \
   olifant-sync-ads-api
+
+# ads-api: entity snapshots (campaigns/ad groups/keywords/targets/negatives/
+# product ads/portfolios, one dated row per entity per day — no ClickHouse.
+# -date defaults to today UTC; the diff engine, ledger external-change
+# detection, D3, and task execution verification all depend on this having
+# run at least once before they produce anything real)
+docker run --rm \
+  -e DATABASE_URL -e ADS_CLIENT_ID -e ADS_CLIENT_SECRET -e SP_TOKEN_ENCRYPTION_KEY \
+  --entrypoint /sync-snapshots \
+  olifant-sync-ads-api
 ```
 
-Each binary uses `sp_report_requests`/dedup logic internally, so re-running the same range is safe. `sync-sales` and `sync-metrics` are the only two that take `-start`/`-end`; everything else has no flags.
+Each binary uses `sp_report_requests`/dedup logic internally, so re-running the same range is safe. `sync-sales` and `sync-metrics` take `-start`/`-end`; `sync-metrics` additionally takes `-report` (`campaigns` | `searchTerm` | `targeting`, defaults to `campaigns`); `sync-snapshots` takes `-date` (defaults to today UTC); everything else has no flags.
 
 ---
 
