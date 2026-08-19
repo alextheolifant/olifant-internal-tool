@@ -56,6 +56,12 @@
   --color-blue-700: #0052B4;      /* text + dot */
 
   /* ─── Yellow (brand family) ───────────────────────────────────────────── */
+  /* Purple — added for the task queue's "placement" type, the one colour
+     in the design brief's type palette with no existing equivalent. Tuned
+     to sit with the warm neutrals: same weight as blue-700/amber-700. */
+  --color-violet-50:  #F0EAFA;    /* bg */
+  --color-violet-700: #6B3FA0;    /* text */
+
   --color-yellow-200: #FFE699;    /* T2 badge bg */
   --color-yellow-700: #997300;    /* reuse amber-700 */
   --color-yellow-800: #664D00;    /* reuse amber-800 */
