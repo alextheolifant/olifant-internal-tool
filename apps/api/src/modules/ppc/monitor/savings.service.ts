@@ -72,7 +72,10 @@ export class SavingsService {
     );
 
     return {
-      agencyVerifiedSavingsMonthly: byClient.reduce((s, c) => s + c.verifiedSavingsMonthly, 0),
+      agencyVerifiedSavingsMonthly: byClient.reduce(
+        (s, c) => s + c.verifiedSavingsMonthly,
+        0,
+      ),
       byClient,
       concludedWithoutSavings,
       noConcludedMonitors: rows.length === 0,
@@ -80,7 +83,9 @@ export class SavingsService {
   }
 
   /** One client's figure — what the PPC clients list renders per row. */
-  async getForClient(clientId: string): Promise<{ verifiedSavingsMonthly: number; noConcludedMonitors: boolean }> {
+  async getForClient(
+    clientId: string,
+  ): Promise<{ verifiedSavingsMonthly: number; noConcludedMonitors: boolean }> {
     const summary = await this.getSummary();
     const entry = summary.byClient.find((c) => c.clientId === clientId);
     return {

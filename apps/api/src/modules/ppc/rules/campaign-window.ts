@@ -29,7 +29,11 @@ export interface WindowAggregate {
   acos: number | null;
 }
 
-export function aggregateWindow(rows: DailyMetricRow[], start: string, end: string): WindowAggregate {
+export function aggregateWindow(
+  rows: DailyMetricRow[],
+  start: string,
+  end: string,
+): WindowAggregate {
   let spend = 0;
   let sales = 0;
   let clicks = 0;
@@ -42,7 +46,13 @@ export function aggregateWindow(rows: DailyMetricRow[], start: string, end: stri
       impressions += r.impressions;
     }
   }
-  return { spend, sales, clicks, impressions, acos: sales > 0 ? (spend / sales) * 100 : null };
+  return {
+    spend,
+    sales,
+    clicks,
+    impressions,
+    acos: sales > 0 ? (spend / sales) * 100 : null,
+  };
 }
 
 export function addDaysISO(iso: string, days: number): string {

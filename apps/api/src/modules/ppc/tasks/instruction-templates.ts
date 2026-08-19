@@ -18,7 +18,8 @@ export interface InstructionContext {
 
 type InstructionTemplate = (ctx: InstructionContext) => string[];
 
-const MARK_EXECUTED = 'Mark this task Executed — the next sync verifies the change automatically.';
+const MARK_EXECUTED =
+  'Mark this task Executed — the next sync verifies the change automatically.';
 
 function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
@@ -41,9 +42,17 @@ function describeWinners(winners: unknown[]): string {
   return winners
     .slice(0, 3)
     .map((w) => {
-      const o = w as { kind?: string; campaignName?: string | null; campaignId?: string; orders?: number };
+      const o = w as {
+        kind?: string;
+        campaignName?: string | null;
+        campaignId?: string;
+        orders?: number;
+      };
       const where = o.campaignName ?? o.campaignId ?? 'another campaign';
-      const kind = o.kind === 'enabled_exact_target' ? 'enabled exact target' : 'search term';
+      const kind =
+        o.kind === 'enabled_exact_target'
+          ? 'enabled exact target'
+          : 'search term';
       return `${kind} in "${where}" with ${o.orders ?? 0} order(s)`;
     })
     .join('; ');
@@ -82,7 +91,9 @@ const TEMPLATES: Record<string, InstructionTemplate> = {
   // someone broadening the negation while they're in the console.
   'W1:negation': ({ action, evidence }) => {
     const term = String(evidence.searchTerm ?? '');
-    const winners = Array.isArray(evidence.winnersElsewhere) ? evidence.winnersElsewhere : [];
+    const winners = Array.isArray(evidence.winnersElsewhere)
+      ? evidence.winnersElsewhere
+      : [];
     const steps = [
       `Open campaign '${action.campaignName}' in the Ads console.${action.adGroupId ? ` Go to ad group ${action.adGroupId}.` : ''}`,
       `Open the Negative keywords tab.`,
@@ -131,7 +142,11 @@ const TEMPLATES: Record<string, InstructionTemplate> = {
   ],
 };
 
-export function renderInstructions(ruleId: string, type: TaskType, ctx: InstructionContext): string[] {
+export function renderInstructions(
+  ruleId: string,
+  type: TaskType,
+  ctx: InstructionContext,
+): string[] {
   const key = `${ruleId}:${type}`;
   const template = TEMPLATES[key];
   if (!template) {

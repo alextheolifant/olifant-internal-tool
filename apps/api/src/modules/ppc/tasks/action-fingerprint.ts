@@ -40,7 +40,15 @@ export function computeActionFingerprint(input: {
   oldValue: string | number | null;
 }): string {
   const oldValueBucket =
-    typeof input.oldValue === 'number' ? String(Math.round(input.oldValue)) : (input.oldValue ?? '');
-  const key = [input.ruleId, input.entityType, input.entityId, input.type, oldValueBucket].join('|');
+    typeof input.oldValue === 'number'
+      ? String(Math.round(input.oldValue))
+      : (input.oldValue ?? '');
+  const key = [
+    input.ruleId,
+    input.entityType,
+    input.entityId,
+    input.type,
+    oldValueBucket,
+  ].join('|');
   return createHash('sha256').update(key).digest('hex');
 }

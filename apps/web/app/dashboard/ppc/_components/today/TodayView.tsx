@@ -153,13 +153,17 @@ function ExceptionCard({ exception }: { exception: PpcTodayException }) {
         <p className="text-[13.5px] font-semibold text-ink">{exception.clientName}</p>
         <p className="mt-0.5 text-[12.5px] leading-relaxed text-neutral-600">{exception.description}</p>
       </div>
-      {/* TODO(task-queue): wire this to the real task detail route once the
-          Task Queue screen exists — deliberately disabled, not a dead link
-          or a route that 404s. */}
+      {/* TODO(today-task-link): the Task Queue and its drawer are both built
+          now, but this exception comes from task_candidates (pre-promotion,
+          no task id) rather than the promoted tasks table — so there is
+          nothing here to open the drawer WITH yet. Wiring this needs the
+          Today endpoint to resolve/join through to the promoted task id.
+          Deliberately disabled in the meantime, not a dead link or a route
+          that 404s. */}
       <button
         type="button"
         disabled
-        title="Coming soon — Task Queue isn't built yet"
+        title="This exception hasn't been promoted to a task yet"
         className="shrink-0 cursor-not-allowed rounded-md border border-neutral-200 px-2.5 py-1.5 text-[11.5px] font-semibold text-neutral-300"
       >
         {actionLabel}

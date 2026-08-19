@@ -4,7 +4,7 @@ import type { TaskAction } from './task.types';
 const baseAction: TaskAction = {
   entityType: 'campaign',
   campaignId: 'c1',
-  campaignName: "SP | CD | Auto | All",
+  campaignName: 'SP | CD | Auto | All',
   adGroupId: null,
   oldValue: null,
   newValue: null,
@@ -17,7 +17,7 @@ describe('renderInstructions', () => {
       action: { ...baseAction, oldValue: 50, newValue: 62.5 },
       evidence: {},
     });
-    expect(steps[0]).toContain("SP | CD | Auto | All");
+    expect(steps[0]).toContain('SP | CD | Auto | All');
     expect(steps.join(' ')).toContain('$50.00');
     expect(steps.join(' ')).toContain('$62.50');
     expect(steps[steps.length - 1]).toBe(
@@ -65,8 +65,8 @@ describe('renderInstructions', () => {
   });
 
   it('throws for an (rule, type) pair with no registered template', () => {
-    expect(() => renderInstructions('D4', 'budget', { action: baseAction, evidence: {} })).toThrow(
-      /No instruction template registered/,
-    );
+    expect(() =>
+      renderInstructions('D4', 'budget', { action: baseAction, evidence: {} }),
+    ).toThrow(/No instruction template registered/);
   });
 });

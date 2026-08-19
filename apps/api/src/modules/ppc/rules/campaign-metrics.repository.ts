@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, gte, lte } from 'drizzle-orm';
 import { DrizzleService } from '../../../db/drizzle.service';
-import { amazonAdsAccounts, campaignMetricsDaily, campaigns } from '../../../db/schema';
+import {
+  amazonAdsAccounts,
+  campaignMetricsDaily,
+  campaigns,
+} from '../../../db/schema';
 import type { CampaignWithDailyMetrics } from './campaign-window';
 
 @Injectable()
@@ -30,7 +34,10 @@ export class CampaignMetricsRepository {
         impressions: campaignMetricsDaily.impressions,
       })
       .from(campaigns)
-      .innerJoin(amazonAdsAccounts, eq(amazonAdsAccounts.id, campaigns.amazonAdsAccountId))
+      .innerJoin(
+        amazonAdsAccounts,
+        eq(amazonAdsAccounts.id, campaigns.amazonAdsAccountId),
+      )
       .leftJoin(
         campaignMetricsDaily,
         and(
@@ -39,7 +46,12 @@ export class CampaignMetricsRepository {
           lte(campaignMetricsDaily.date, windowEnd),
         ),
       )
-      .where(and(eq(amazonAdsAccounts.clientId, clientId), eq(campaigns.state, 'ENABLED')));
+      .where(
+        and(
+          eq(amazonAdsAccounts.clientId, clientId),
+          eq(campaigns.state, 'ENABLED'),
+        ),
+      );
 
     const byCampaign = new Map<string, CampaignWithDailyMetrics>();
     for (const r of rows) {
@@ -48,7 +60,10 @@ export class CampaignMetricsRepository {
         c = {
           campaignId: r.campaignId,
           campaignName: r.campaignName,
-          budget: r.budget !== null && r.budget !== undefined ? Number(r.budget) : null,
+          budget:
+            r.budget !== null && r.budget !== undefined
+              ? Number(r.budget)
+              : null,
           dailyMetrics: [],
         };
         byCampaign.set(r.campaignId, c);

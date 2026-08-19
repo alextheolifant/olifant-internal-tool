@@ -13,7 +13,10 @@ import type { TaskEvidence, TaskEvidenceProvenance } from './task.types';
  * This is what lets the facts endpoint resolve a fact table from provenance
  * alone (see fact-source.ts) instead of hardcoding a table per rule.
  */
-const SYNC_TYPE_BY_ENTITY_TYPE: Record<string, 'ads_metrics' | 'ads_search_term' | 'ads_targeting'> = {
+const SYNC_TYPE_BY_ENTITY_TYPE: Record<
+  string,
+  'ads_metrics' | 'ads_search_term' | 'ads_targeting'
+> = {
   campaign: 'ads_metrics',
   search_term: 'ads_search_term',
   keyword: 'ads_targeting',
@@ -47,7 +50,10 @@ export class EvidenceProvenanceResolver {
   ): Promise<{ provenance: TaskEvidenceProvenance; profile: string | null }> {
     const campaignId = campaignIdFor(entityType, entityId);
     const syncType = SYNC_TYPE_BY_ENTITY_TYPE[entityType] ?? 'ads_metrics';
-    const empty = { provenance: { reportJobId: null, syncedAt: null, syncType }, profile: null };
+    const empty = {
+      provenance: { reportJobId: null, syncedAt: null, syncType },
+      profile: null,
+    };
 
     if (!campaignId) return empty;
 
@@ -58,7 +64,10 @@ export class EvidenceProvenanceResolver {
         countryCode: amazonAdsAccounts.countryCode,
       })
       .from(campaigns)
-      .innerJoin(amazonAdsAccounts, eq(amazonAdsAccounts.id, campaigns.amazonAdsAccountId))
+      .innerJoin(
+        amazonAdsAccounts,
+        eq(amazonAdsAccounts.id, campaigns.amazonAdsAccountId),
+      )
       .innerJoin(
         syncLogs,
         and(
@@ -67,7 +76,12 @@ export class EvidenceProvenanceResolver {
           eq(syncLogs.status, 'success'),
         ),
       )
-      .where(and(eq(amazonAdsAccounts.clientId, clientId), eq(campaigns.campaignId, campaignId)))
+      .where(
+        and(
+          eq(amazonAdsAccounts.clientId, clientId),
+          eq(campaigns.campaignId, campaignId),
+        ),
+      )
       .orderBy(desc(syncLogs.completedAt))
       .limit(1);
 
@@ -76,7 +90,10 @@ export class EvidenceProvenanceResolver {
       // the profile from the campaign itself rather than losing it too —
       // profile is a property of the account, not of any particular sync.
       const profile = await this.resolveProfile(clientId, campaignId);
-      return { provenance: { reportJobId: null, syncedAt: null, syncType }, profile };
+      return {
+        provenance: { reportJobId: null, syncedAt: null, syncType },
+        profile,
+      };
     }
 
     return {
@@ -89,12 +106,23 @@ export class EvidenceProvenanceResolver {
     };
   }
 
-  private async resolveProfile(clientId: string, campaignId: string): Promise<string | null> {
+  private async resolveProfile(
+    clientId: string,
+    campaignId: string,
+  ): Promise<string | null> {
     const [row] = await this.drizzle.db
       .select({ countryCode: amazonAdsAccounts.countryCode })
       .from(campaigns)
-      .innerJoin(amazonAdsAccounts, eq(amazonAdsAccounts.id, campaigns.amazonAdsAccountId))
-      .where(and(eq(amazonAdsAccounts.clientId, clientId), eq(campaigns.campaignId, campaignId)))
+      .innerJoin(
+        amazonAdsAccounts,
+        eq(amazonAdsAccounts.id, campaigns.amazonAdsAccountId),
+      )
+      .where(
+        and(
+          eq(amazonAdsAccounts.clientId, clientId),
+          eq(campaigns.campaignId, campaignId),
+        ),
+      )
       .limit(1);
     return row?.countryCode ?? null;
   }
@@ -115,7 +143,8 @@ export class EvidenceProvenanceResolver {
  */
 function campaignIdFor(entityType: string, entityId: string): string | null {
   if (entityType === 'campaign') return entityId;
-  if (entityType === 'search_term') return parseSearchTermEntityId(entityId)?.campaignId ?? null;
+  if (entityType === 'search_term')
+    return parseSearchTermEntityId(entityId)?.campaignId ?? null;
   return null;
 }
 
@@ -134,15 +163,20 @@ export function buildEvidence(
   return { metrics: rawEvidence, window, provenance, fallbacks };
 }
 
-function extractWindow(evidence: Record<string, unknown>): { start: string; end: string } | null {
+function extractWindow(
+  evidence: Record<string, unknown>,
+): { start: string; end: string } | null {
   const start = evidence.windowStart;
   const end = evidence.windowEnd;
-  if (typeof start === 'string' && typeof end === 'string') return { start, end };
+  if (typeof start === 'string' && typeof end === 'string')
+    return { start, end };
 
   // D5 doesn't carry windowStart/windowEnd (its "window" is really just
   // yesterday plus a baseline lookback) — trailingBaselineWindow.start
   // through yesterdayDate is the closest equivalent.
-  const baseline = evidence.trailingBaselineWindow as { start?: string; end?: string } | undefined;
+  const baseline = evidence.trailingBaselineWindow as
+    | { start?: string; end?: string }
+    | undefined;
   const yesterday = evidence.yesterdayDate;
   if (baseline?.start && typeof yesterday === 'string') {
     return { start: baseline.start, end: yesterday };

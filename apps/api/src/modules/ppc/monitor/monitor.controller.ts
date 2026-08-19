@@ -19,7 +19,9 @@ export class MonitorController {
   /** Opens monitors for newly executed tasks, then advances every watcher. */
   @Post('run')
   run(@Query('date') date?: string) {
-    return this.monitor.runDailyPass(date ?? new Date().toISOString().slice(0, 10));
+    return this.monitor.runDailyPass(
+      date ?? new Date().toISOString().slice(0, 10),
+    );
   }
 
   @Post('open')

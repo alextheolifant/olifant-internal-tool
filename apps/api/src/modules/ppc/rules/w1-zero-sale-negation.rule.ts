@@ -3,7 +3,11 @@ import { deriveExpectedClicksPerOrder } from './expected-clicks-per-order';
 import { checkSettledData } from './settled-data-guard';
 import { RULE_THRESHOLD_DEFAULTS } from './thresholds';
 import { searchTermEntityId } from './term-normalization';
-import type { RuleConditionResult, RuleDefinition, RuleEvalContext } from './types';
+import type {
+  RuleConditionResult,
+  RuleDefinition,
+  RuleEvalContext,
+} from './types';
 
 // W1 — Zero-sale negation.
 //
@@ -47,17 +51,30 @@ export const w1ZeroSaleNegationRule: RuleDefinition = {
 
   describe(evidence) {
     const term = String(evidence.searchTerm ?? 'unknown term');
-    const campaign = String(evidence.campaignName ?? evidence.campaignId ?? 'a campaign');
+    const campaign = String(
+      evidence.campaignName ?? evidence.campaignId ?? 'a campaign',
+    );
     const clicks = Number(evidence.clicks ?? 0);
     const spend = Number(evidence.cost ?? 0);
-    const winners = Array.isArray(evidence.winnersElsewhere) ? evidence.winnersElsewhere.length : 0;
-    const winnerNote = winners > 0 ? ` Converts elsewhere in ${winners} other place(s) — scope to this campaign only.` : '';
+    const winners = Array.isArray(evidence.winnersElsewhere)
+      ? evidence.winnersElsewhere.length
+      : 0;
+    const winnerNote =
+      winners > 0
+        ? ` Converts elsewhere in ${winners} other place(s) — scope to this campaign only.`
+        : '';
     return `"${term}" took ${clicks} clicks and $${spend.toFixed(2)} with zero orders in "${campaign}".${winnerNote}`;
   },
 
   async evaluate(ctx: RuleEvalContext): Promise<RuleConditionResult[]> {
-    const multiple = ctx.resolveThreshold('w1_clicks_multiple', RULE_THRESHOLD_DEFAULTS.w1_clicks_multiple);
-    const windowDays = ctx.resolveThreshold('w1_window_days', RULE_THRESHOLD_DEFAULTS.w1_window_days);
+    const multiple = ctx.resolveThreshold(
+      'w1_clicks_multiple',
+      RULE_THRESHOLD_DEFAULTS.w1_clicks_multiple,
+    );
+    const windowDays = ctx.resolveThreshold(
+      'w1_window_days',
+      RULE_THRESHOLD_DEFAULTS.w1_window_days,
+    );
     const expectationDays = ctx.resolveThreshold(
       'w1_expectation_window_days',
       RULE_THRESHOLD_DEFAULTS.w1_expectation_window_days,
@@ -87,7 +104,11 @@ export const w1ZeroSaleNegationRule: RuleDefinition = {
 
     const [aggregates, populations] = await Promise.all([
       ctx.searchTerms.getTermAggregates(accountIds, windowStart, windowEnd),
-      ctx.searchTerms.getClicksOrdersPopulations(accountIds, expectationStart, windowEnd),
+      ctx.searchTerms.getClicksOrdersPopulations(
+        accountIds,
+        expectationStart,
+        windowEnd,
+      ),
     ]);
 
     const results: RuleConditionResult[] = [];
@@ -96,7 +117,11 @@ export const w1ZeroSaleNegationRule: RuleDefinition = {
       // ── expected_clicks_per_order, or skip entirely ────────────────────
       const adGroupPop = populations.byAdGroup.get(agg.adGroupId) ?? null;
       const campaignPop = populations.byCampaign.get(agg.campaignId) ?? null;
-      const expectation = deriveExpectedClicksPerOrder(adGroupPop, campaignPop, expectationThresholds);
+      const expectation = deriveExpectedClicksPerOrder(
+        adGroupPop,
+        campaignPop,
+        expectationThresholds,
+      );
 
       if (!expectation) {
         // Thin data — W1 does not evaluate. Deliberately NOT emitted as a
@@ -121,7 +146,11 @@ export const w1ZeroSaleNegationRule: RuleDefinition = {
         expectationStart,
         windowEnd,
       );
-      const settled = checkSettledData(dailyClicks, ctx.evaluationDate, recentShareHold);
+      const settled = checkSettledData(
+        dailyClicks,
+        ctx.evaluationDate,
+        recentShareHold,
+      );
       if (!settled.isSettled) {
         // Held, not emitted. The condition genuinely holds on the metrics
         // but the data isn't mature enough to act on.

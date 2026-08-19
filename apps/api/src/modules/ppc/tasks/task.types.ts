@@ -34,7 +34,10 @@ export type TaskConfidence = 'high' | 'medium' | 'provisional';
 
 // Mirrors schema.ts's taskVerifyMismatchReasonEnum — which of the three
 // distinct verify_failed cases occurred, per verification.service.ts.
-export type TaskVerifyMismatchReason = 'unchanged' | 'different_value' | 'entity_deleted';
+export type TaskVerifyMismatchReason =
+  | 'unchanged'
+  | 'different_value'
+  | 'entity_deleted';
 
 export type TaskDismissReason =
   | 'not_actionable'

@@ -9,7 +9,6 @@ import { usePpcClientFilter } from "../../_lib/ppc-client-filter-context";
 import { freshnessText } from "../FreshnessBadge";
 import { healthTokens } from "../../../_lib/theme";
 
-const DASH = "—";
 
 function Kv({ label, value, valueClass }: { label: string; value: React.ReactNode; valueClass?: string }) {
   return (

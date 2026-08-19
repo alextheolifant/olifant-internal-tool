@@ -18,7 +18,10 @@
 //      and is reported as non-expandable rather than returning an empty
 //      table the UI would render as "no data".
 
-export type FactTable = 'campaign_metrics_daily' | 'search_term_metrics_daily' | 'target_metrics_daily';
+export type FactTable =
+  | 'campaign_metrics_daily'
+  | 'search_term_metrics_daily'
+  | 'target_metrics_daily';
 
 /** sync_type → the fact table that sync writes. */
 export const SYNC_TYPE_TO_FACT_TABLE: Record<string, FactTable> = {
@@ -92,17 +95,29 @@ export interface MetricResolution {
   reason: NonExpandableReason | null;
 }
 
-export function resolveMetric(syncType: string | null | undefined, metricKey: string): MetricResolution {
-  const factTable = syncType ? (SYNC_TYPE_TO_FACT_TABLE[syncType] ?? null) : null;
+export function resolveMetric(
+  syncType: string | null | undefined,
+  metricKey: string,
+): MetricResolution {
+  const factTable = syncType
+    ? (SYNC_TYPE_TO_FACT_TABLE[syncType] ?? null)
+    : null;
   if (!factTable) {
-    return { expandable: false, factTable: null, column: null, reason: 'unknown_fact_table' };
+    return {
+      expandable: false,
+      factTable: null,
+      column: null,
+      reason: 'unknown_fact_table',
+    };
   }
   const column = EXPANDABLE_METRICS[factTable][metricKey] ?? null;
   if (!column) {
     // Distinguish "we know this one is arithmetic" from "we don't recognise
     // it at all" — the UI renders both as non-interactive, but the former is
     // expected and the latter is worth noticing in logs.
-    const reason: NonExpandableReason = DERIVED_METRIC_KEYS.has(metricKey) ? 'derived' : 'unknown_metric';
+    const reason: NonExpandableReason = DERIVED_METRIC_KEYS.has(metricKey)
+      ? 'derived'
+      : 'unknown_metric';
     return { expandable: false, factTable, column: null, reason };
   }
   return { expandable: true, factTable, column, reason: null };

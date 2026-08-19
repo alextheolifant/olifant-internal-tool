@@ -305,10 +305,9 @@ export const adsManagerAccounts = pgTable(
     organizationId: uuid('organization_id')
       .notNull()
       .references(() => organizations.id, { onDelete: 'cascade' }),
-    connectedByUserId: uuid('connected_by_user_id').references(
-      () => users.id,
-      { onDelete: 'set null' },
-    ),
+    connectedByUserId: uuid('connected_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     refreshToken: varchar('refresh_token', { length: 2048 }).notNull(),
     connectedAt: timestamp('connected_at', { withTimezone: true })
       .notNull()
@@ -430,7 +429,9 @@ export const adsReportRequests = pgTable(
     // ...) — NOT Amazon's own reportTypeId, so our storage stays stable even
     // if Amazon renames theirs. Defaults 'campaigns' so pre-existing rows
     // (from before report types were parameterized) stay correctly attributed.
-    reportType: varchar('report_type', { length: 20 }).notNull().default('campaigns'),
+    reportType: varchar('report_type', { length: 20 })
+      .notNull()
+      .default('campaigns'),
     region: varchar('region', { length: 3 }).notNull(),
     reportId: varchar('report_id', { length: 255 }).notNull(),
     startDate: date('start_date').notNull(),
@@ -474,14 +475,22 @@ export const searchTermMetricsDaily = pgTable(
     impressions: integer('impressions').notNull().default(0),
     clicks: integer('clicks').notNull().default(0),
     cost: numeric('cost', { precision: 12, scale: 4 }).notNull().default('0'),
-    sales7d: numeric('sales_7d', { precision: 12, scale: 4 }).notNull().default('0'),
-    sales14d: numeric('sales_14d', { precision: 12, scale: 4 }).notNull().default('0'),
+    sales7d: numeric('sales_7d', { precision: 12, scale: 4 })
+      .notNull()
+      .default('0'),
+    sales14d: numeric('sales_14d', { precision: 12, scale: 4 })
+      .notNull()
+      .default('0'),
     orders7d: integer('orders_7d').notNull().default(0),
     orders14d: integer('orders_14d').notNull().default(0),
     units7d: integer('units_7d').notNull().default(0),
     units14d: integer('units_14d').notNull().default(0),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     // NULLs in a unique index are never considered equal to each other in
@@ -518,17 +527,29 @@ export const targetMetricsDaily = pgTable(
     impressions: integer('impressions').notNull().default(0),
     clicks: integer('clicks').notNull().default(0),
     cost: numeric('cost', { precision: 12, scale: 4 }).notNull().default('0'),
-    sales7d: numeric('sales_7d', { precision: 12, scale: 4 }).notNull().default('0'),
-    sales14d: numeric('sales_14d', { precision: 12, scale: 4 }).notNull().default('0'),
+    sales7d: numeric('sales_7d', { precision: 12, scale: 4 })
+      .notNull()
+      .default('0'),
+    sales14d: numeric('sales_14d', { precision: 12, scale: 4 })
+      .notNull()
+      .default('0'),
     orders7d: integer('orders_7d').notNull().default(0),
     orders14d: integer('orders_14d').notNull().default(0),
     units7d: integer('units_7d').notNull().default(0),
     units14d: integer('units_14d').notNull().default(0),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
-    uniqueIndex('uq_target_metrics').on(t.amazonAdsAccountId, t.date, t.targetId),
+    uniqueIndex('uq_target_metrics').on(
+      t.amazonAdsAccountId,
+      t.date,
+      t.targetId,
+    ),
     index('idx_target_metrics_date').on(t.date),
     index('idx_target_metrics_account').on(t.amazonAdsAccountId),
   ],
@@ -545,7 +566,9 @@ export const spReportRequests = pgTable(
     // submitted, so Phase 2 polling can mark it success/failed on
     // completion — without this, sync_logs stays 'running' forever
     // regardless of how the report request resolves.
-    syncLogId: uuid('sync_log_id').references(() => syncLogs.id, { onDelete: 'set null' }),
+    syncLogId: uuid('sync_log_id').references(() => syncLogs.id, {
+      onDelete: 'set null',
+    }),
     region: varchar('region', { length: 3 }).notNull(),
     reportId: varchar('report_id', { length: 255 }).notNull(),
     reportDocumentId: varchar('report_document_id', { length: 255 }),
@@ -658,7 +681,10 @@ export const catalogItems = pgTable(
       .defaultNow(),
   },
   (t) => [
-    uniqueIndex('uq_catalog_items_account_asin').on(t.amazonSpAccountId, t.asin),
+    uniqueIndex('uq_catalog_items_account_asin').on(
+      t.amazonSpAccountId,
+      t.asin,
+    ),
     index('idx_catalog_items_account').on(t.amazonSpAccountId),
   ],
 );
@@ -678,7 +704,10 @@ export const anomalies = pgTable(
       .notNull()
       .references(() => clients.id, { onDelete: 'cascade' }),
     metric: anomalyMetricEnum('metric').notNull(),
-    baselineValue: numeric('baseline_value', { precision: 14, scale: 4 }).notNull(),
+    baselineValue: numeric('baseline_value', {
+      precision: 14,
+      scale: 4,
+    }).notNull(),
     actualValue: numeric('actual_value', { precision: 14, scale: 4 }).notNull(),
     // Null when the baseline was 0 — a "new activity" anomaly has no meaningful
     // percentage; never fabricated as a sentinel number.
@@ -818,14 +847,20 @@ export const ppcClientConfigs = pgTable(
     // its own. marginDefault doubles as the account's default break-even
     // ACOS (BE = margin) — displayed as "BE" in the UI, not stored twice.
     marginDefault: numeric('margin_default', { precision: 5, scale: 2 }),
-    targetAcosDefault: numeric('target_acos_default', { precision: 5, scale: 2 }),
+    targetAcosDefault: numeric('target_acos_default', {
+      precision: 5,
+      scale: 2,
+    }),
     // Account-level rollup/reporting target — independent of the bid-math
     // fallback above. Purely a reporting number; bid/rule math (a later
     // phase) always reads the per-product targets, never this.
     accountTargetMetric: ppcAccountTargetMetricEnum('account_target_metric')
       .notNull()
       .default('tacos'),
-    accountTargetMetricValue: numeric('account_target_metric_value', { precision: 5, scale: 2 }),
+    accountTargetMetricValue: numeric('account_target_metric_value', {
+      precision: 5,
+      scale: 2,
+    }),
     brandTerms: jsonb('brand_terms').notNull().default([]),
     ownAsins: jsonb('own_asins').notNull().default([]),
     // Array of { campaignName: string, objective: 'performance' | 'defense' | 'ntb' }.
@@ -844,7 +879,10 @@ export const ppcClientConfigs = pgTable(
     // (priority.ts's client_multiplier term). Default 1.00 = no escalation.
     // A client paying for a faster SLA, or one the team wants to prioritize,
     // gets this bumped above 1.0; it's a blunt multiplier, not a per-rule setting.
-    priorityMultiplier: numeric('priority_multiplier', { precision: 4, scale: 2 })
+    priorityMultiplier: numeric('priority_multiplier', {
+      precision: 4,
+      scale: 2,
+    })
       .notNull()
       .default('1.00'),
     createdAt: timestamp('created_at', { withTimezone: true })
@@ -1025,13 +1063,20 @@ export const taskStatusEnum = pgEnum('task_status', [
 // see verification.service.ts. Recorded so the person investigating knows
 // whether to look for "never actually done," "someone entered something
 // else," or "entity's gone" without re-deriving it from the diff by hand.
-export const taskVerifyMismatchReasonEnum = pgEnum('task_verify_mismatch_reason', [
-  'unchanged', // entity's current value still matches the pre-change oldValue
-  'different_value', // entity changed, but not to the confirmed value
-  'entity_deleted', // entity no longer appears in the latest snapshot
-]);
+export const taskVerifyMismatchReasonEnum = pgEnum(
+  'task_verify_mismatch_reason',
+  [
+    'unchanged', // entity's current value still matches the pre-change oldValue
+    'different_value', // entity changed, but not to the confirmed value
+    'entity_deleted', // entity no longer appears in the latest snapshot
+  ],
+);
 
-export const taskConfidenceEnum = pgEnum('task_confidence', ['high', 'medium', 'provisional']);
+export const taskConfidenceEnum = pgEnum('task_confidence', [
+  'high',
+  'medium',
+  'provisional',
+]);
 
 // Structured dismissal reasons — feed threshold tuning later, so a fixed
 // vocabulary rather than free text is required (a note field carries anything
@@ -1080,14 +1125,21 @@ export const tasks = pgTable(
     evidence: jsonb('evidence').notNull(),
     // Ordered array of console-literal instruction strings — see instruction-templates.ts
     instructions: jsonb('instructions').notNull(),
-    impactMonthlyUsd: numeric('impact_monthly_usd', { precision: 12, scale: 2 }),
+    impactMonthlyUsd: numeric('impact_monthly_usd', {
+      precision: 12,
+      scale: 2,
+    }),
     impactBasis: text('impact_basis'),
     priorityScore: integer('priority_score').notNull(),
     confidence: taskConfidenceEnum('confidence').notNull(),
     status: taskStatusEnum('status').notNull().default('pending'),
-    blockedBy: varchar('blocked_by', { length: 24 }).references((): AnyPgColumn => tasks.id),
+    blockedBy: varchar('blocked_by', { length: 24 }).references(
+      (): AnyPgColumn => tasks.id,
+    ),
     requiresReview: boolean('requires_review').notNull().default(false),
-    standingDirectivesAck: boolean('standing_directives_ack').notNull().default(false),
+    standingDirectivesAck: boolean('standing_directives_ack')
+      .notNull()
+      .default(false),
     assignee: varchar('assignee', { length: 255 }),
     rollback: text('rollback').notNull(),
     dismissReason: taskDismissReasonEnum('dismiss_reason'),
@@ -1100,10 +1152,16 @@ export const tasks = pgTable(
     // What verification compares against, not action.newValue directly.
     confirmedValue: text('confirmed_value'),
     verifiedAt: timestamp('verified_at', { withTimezone: true }),
-    verifyMismatchReason: taskVerifyMismatchReasonEnum('verify_mismatch_reason'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    verifyMismatchReason: taskVerifyMismatchReasonEnum(
+      'verify_mismatch_reason',
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     executedAt: timestamp('executed_at', { withTimezone: true }),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     index('idx_tasks_client_status').on(t.clientId, t.status),
@@ -1112,7 +1170,12 @@ export const tasks = pgTable(
     index('idx_tasks_dedup').on(t.clientId, t.ruleId, t.actionFingerprint),
     // Expiry-on-clear lookup: for each open task, what's the current
     // rule_condition_state for its entity?
-    index('idx_tasks_entity').on(t.clientId, t.ruleId, t.entityType, t.entityId),
+    index('idx_tasks_entity').on(
+      t.clientId,
+      t.ruleId,
+      t.entityType,
+      t.entityId,
+    ),
   ],
 );
 
@@ -1167,7 +1230,9 @@ export const entitySnapshotsDaily = pgTable(
     // 7 entity types have different fields, and the diff engine reads
     // whatever keys are present rather than assuming a shared shape.
     state: jsonb('state').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     uniqueIndex('uq_entity_snapshot_daily').on(
@@ -1186,12 +1251,15 @@ export const entitySnapshotsDaily = pgTable(
   ],
 );
 
-export const entitySnapshotsDailyRelations = relations(entitySnapshotsDaily, ({ one }) => ({
-  account: one(amazonAdsAccounts, {
-    fields: [entitySnapshotsDaily.amazonAdsAccountId],
-    references: [amazonAdsAccounts.id],
+export const entitySnapshotsDailyRelations = relations(
+  entitySnapshotsDaily,
+  ({ one }) => ({
+    account: one(amazonAdsAccounts, {
+      fields: [entitySnapshotsDaily.amazonAdsAccountId],
+      references: [amazonAdsAccounts.id],
+    }),
   }),
-}));
+);
 
 // ─── Ledger: append-only change history ────────────────────────────────────
 // Two sources write here — see ledger.service.ts:
@@ -1232,7 +1300,9 @@ export const ledgerEntries = pgTable(
     // for source='external' this is the diff's toDate (daily-granularity
     // detection, see ledger.service.ts). For source='engine' this is the
     // task's executedAt, which IS a real timestamp.
-    timestampDetected: timestamp('timestamp_detected', { withTimezone: true }).notNull(),
+    timestampDetected: timestamp('timestamp_detected', {
+      withTimezone: true,
+    }).notNull(),
     entityType: varchar('entity_type', { length: 50 }).notNull(),
     entityId: varchar('entity_id', { length: 255 }).notNull(),
     campaignName: varchar('campaign_name', { length: 500 }),
@@ -1240,13 +1310,17 @@ export const ledgerEntries = pgTable(
     oldValue: text('old_value'),
     newValue: text('new_value'),
     source: ledgerSourceEnum('source').notNull(),
-    taskId: varchar('task_id', { length: 24 }).references(() => tasks.id, { onDelete: 'set null' }),
+    taskId: varchar('task_id', { length: 24 }).references(() => tasks.id, {
+      onDelete: 'set null',
+    }),
     actor: varchar('actor', { length: 255 }),
     note: text('note'),
     // Not in the literal §8.5 column list — added so "Category inference on
     // external changes" (Part 2) has somewhere real to persist its result.
     category: ledgerCategoryEnum('category'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     index('idx_ledger_client_timestamp').on(t.clientId, t.timestampDetected),
@@ -1271,7 +1345,10 @@ export const ledgerEntriesRelations = relations(ledgerEntries, ({ one }) => ({
 // search_term_metrics_daily). No Amazon API calls — the monitor is a saved
 // query keyed on (entity id, campaign id, execution date), see
 // monitor-facts.repository.ts.
-export const monitorStateEnum = pgEnum('monitor_state', ['watching', 'concluded']);
+export const monitorStateEnum = pgEnum('monitor_state', [
+  'watching',
+  'concluded',
+]);
 
 export const taskMonitors = pgTable(
   'task_monitors',
@@ -1297,8 +1374,12 @@ export const taskMonitors = pgTable(
     // budget change, impression collapse for a bid change).
     checkpoint14d: jsonb('checkpoint_14d'),
     verdict30d: jsonb('verdict_30d'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     // One monitor per task — openForExecutedTasks relies on this to stay

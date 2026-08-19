@@ -2,9 +2,15 @@ import { expandableKeysFor, resolveMetric } from './fact-source';
 
 describe('resolveMetric — resolves the fact table from PROVENANCE, not the rule', () => {
   it('maps each sync type to the table that sync writes', () => {
-    expect(resolveMetric('ads_metrics', 'clicks').factTable).toBe('campaign_metrics_daily');
-    expect(resolveMetric('ads_search_term', 'clicks').factTable).toBe('search_term_metrics_daily');
-    expect(resolveMetric('ads_targeting', 'clicks').factTable).toBe('target_metrics_daily');
+    expect(resolveMetric('ads_metrics', 'clicks').factTable).toBe(
+      'campaign_metrics_daily',
+    );
+    expect(resolveMetric('ads_search_term', 'clicks').factTable).toBe(
+      'search_term_metrics_daily',
+    );
+    expect(resolveMetric('ads_targeting', 'clicks').factTable).toBe(
+      'target_metrics_daily',
+    );
   });
 
   it('resolves an evidence key to the physical column, which may differ', () => {
@@ -14,9 +20,11 @@ describe('resolveMetric — resolves the fact table from PROVENANCE, not the rul
     expect(r.column).toBe('orders_7d');
   });
 
-  it('maps a rule\'s windowed alias onto the same daily column', () => {
+  it("maps a rule's windowed alias onto the same daily column", () => {
     // D4 evidence carries trailing7dSpend; the rows behind it are spend.
-    expect(resolveMetric('ads_metrics', 'trailing7dSpend').column).toBe('spend');
+    expect(resolveMetric('ads_metrics', 'trailing7dSpend').column).toBe(
+      'spend',
+    );
   });
 
   it('marks derived arithmetic as non-expandable with a clear reason', () => {
@@ -41,7 +49,9 @@ describe('resolveMetric — resolves the fact table from PROVENANCE, not the rul
   });
 
   it('reports unknown_metric for a key that is neither a column nor a known derivation', () => {
-    expect(resolveMetric('ads_metrics', 'somethingNobodyDefined').reason).toBe('unknown_metric');
+    expect(resolveMetric('ads_metrics', 'somethingNobodyDefined').reason).toBe(
+      'unknown_metric',
+    );
   });
 
   it('does not leak columns across tables — campaign evidence has no cost column', () => {
@@ -61,7 +71,9 @@ describe('resolveMetric — resolves the fact table from PROVENANCE, not the rul
 
 describe('expandableKeysFor', () => {
   it('lists the keys a table can expand', () => {
-    expect(expandableKeysFor('search_term_metrics_daily')).toEqual(expect.arrayContaining(['clicks', 'cost', 'orders']));
+    expect(expandableKeysFor('search_term_metrics_daily')).toEqual(
+      expect.arrayContaining(['clicks', 'cost', 'orders']),
+    );
   });
 
   it('returns nothing when no table could be resolved', () => {

@@ -3,11 +3,18 @@ import { makeThresholdResolver } from './thresholds';
 import type { LedgerRepository } from '../ledger/ledger.repository';
 import type { SearchTermRepository } from './search-term.repository';
 import type { CampaignMetricsRepository } from './campaign-metrics.repository';
-import type { CampaignWithDailyMetrics, DailyMetricRow } from './campaign-window';
+import type {
+  CampaignWithDailyMetrics,
+  DailyMetricRow,
+} from './campaign-window';
 import type { RuleEvalContext } from './types';
 
-function fakeRepo(campaigns: CampaignWithDailyMetrics[]): CampaignMetricsRepository {
-  return { getEnabledCampaignsWithDailyMetrics: async () => campaigns } as unknown as CampaignMetricsRepository;
+function fakeRepo(
+  campaigns: CampaignWithDailyMetrics[],
+): CampaignMetricsRepository {
+  return {
+    getEnabledCampaignsWithDailyMetrics: async () => campaigns,
+  } as unknown as CampaignMetricsRepository;
 }
 
 // D5 doesn't touch the ledger — only D3 does — so an unimplemented stub is
@@ -23,7 +30,10 @@ function row(date: string, impressions: number): DailyMetricRow {
 describe('d5DeliveryStoppedRule', () => {
   const evaluationDate = '2026-08-04'; // yesterday (T-2) = 2026-08-02; baseline = 2026-07-26..2026-08-01
 
-  function makeCtx(campaigns: CampaignWithDailyMetrics[], overrides: Record<string, number> = {}): RuleEvalContext {
+  function makeCtx(
+    campaigns: CampaignWithDailyMetrics[],
+    overrides: Record<string, number> = {},
+  ): RuleEvalContext {
     return {
       clientId: 'client-1',
       evaluationDate,
@@ -51,7 +61,9 @@ describe('d5DeliveryStoppedRule', () => {
 
   it('fires when a previously-serving campaign has ~0 impressions yesterday', async () => {
     const daily = [...baselineServingDays(), row('2026-08-02', 0)];
-    const ctx = makeCtx([{ campaignId: 'c1', campaignName: 'Stopped', dailyMetrics: daily }]);
+    const ctx = makeCtx([
+      { campaignId: 'c1', campaignName: 'Stopped', dailyMetrics: daily },
+    ]);
     const results = await d5DeliveryStoppedRule.evaluate(ctx);
 
     expect(results).toHaveLength(1);
@@ -72,14 +84,18 @@ describe('d5DeliveryStoppedRule', () => {
       row('2026-08-01', 0),
       row('2026-08-02', 0), // yesterday also 0
     ];
-    const ctx = makeCtx([{ campaignId: 'c1', campaignName: 'AlwaysQuiet', dailyMetrics: daily }]);
+    const ctx = makeCtx([
+      { campaignId: 'c1', campaignName: 'AlwaysQuiet', dailyMetrics: daily },
+    ]);
     const results = await d5DeliveryStoppedRule.evaluate(ctx);
     expect(results).toHaveLength(0);
   });
 
   it('does not fire when the campaign is still delivering normally', async () => {
     const daily = [...baselineServingDays(), row('2026-08-02', 40)];
-    const ctx = makeCtx([{ campaignId: 'c1', campaignName: 'StillGoing', dailyMetrics: daily }]);
+    const ctx = makeCtx([
+      { campaignId: 'c1', campaignName: 'StillGoing', dailyMetrics: daily },
+    ]);
     const results = await d5DeliveryStoppedRule.evaluate(ctx);
     expect(results).toHaveLength(1);
     expect(results[0].holdsAtEnter).toBe(false);
@@ -89,9 +105,12 @@ describe('d5DeliveryStoppedRule', () => {
     // Baseline days are 50,40,60,55,45,0,30 — only 3 (50,60,55) clear a
     // raised bar of 46, below the 4-day majority.
     const daily = [...baselineServingDays(), row('2026-08-02', 0)];
-    const ctx = makeCtx([{ campaignId: 'c1', campaignName: 'Borderline', dailyMetrics: daily }], {
-      d5_meaningful_impressions: 46,
-    });
+    const ctx = makeCtx(
+      [{ campaignId: 'c1', campaignName: 'Borderline', dailyMetrics: daily }],
+      {
+        d5_meaningful_impressions: 46,
+      },
+    );
     const results = await d5DeliveryStoppedRule.evaluate(ctx);
     expect(results).toHaveLength(0);
   });
@@ -99,7 +118,9 @@ describe('d5DeliveryStoppedRule', () => {
   it('hysteresis: clear threshold is looser (higher) than enter for this low-is-bad metric', async () => {
     // Default enter=2, clear=2/0.85≈2.35 → 2 impressions still holds at clear.
     const daily = [...baselineServingDays(), row('2026-08-02', 2)];
-    const ctx = makeCtx([{ campaignId: 'c1', campaignName: 'Borderline', dailyMetrics: daily }]);
+    const ctx = makeCtx([
+      { campaignId: 'c1', campaignName: 'Borderline', dailyMetrics: daily },
+    ]);
     const results = await d5DeliveryStoppedRule.evaluate(ctx);
     expect(results[0].holdsAtEnter).toBe(true); // 2 <= 2
     expect(results[0].holdsAtClear).toBe(true); // 2 <= 2.35

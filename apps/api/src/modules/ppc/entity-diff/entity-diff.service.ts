@@ -32,7 +32,10 @@ export class EntityDiffService {
     date: string,
   ): Promise<{ parentId: string | null; state: unknown } | null> {
     const [row] = await this.drizzle.db
-      .select({ parentId: entitySnapshotsDaily.parentId, state: entitySnapshotsDaily.state })
+      .select({
+        parentId: entitySnapshotsDaily.parentId,
+        state: entitySnapshotsDaily.state,
+      })
       .from(entitySnapshotsDaily)
       .where(
         and(
@@ -52,7 +55,9 @@ export class EntityDiffService {
     accountId: string,
     entityType: string,
     date: string,
-  ): Promise<Array<{ entityId: string; parentId: string | null; state: unknown }>> {
+  ): Promise<
+    Array<{ entityId: string; parentId: string | null; state: unknown }>
+  > {
     return this.drizzle.db
       .select({
         entityId: entitySnapshotsDaily.entityId,
@@ -79,7 +84,12 @@ export class EntityDiffService {
   async getLatestSnapshot(
     entityType: string,
     entityId: string,
-  ): Promise<{ accountId: string; snapshotDate: string; parentId: string | null; state: unknown } | null> {
+  ): Promise<{
+    accountId: string;
+    snapshotDate: string;
+    parentId: string | null;
+    state: unknown;
+  } | null> {
     const [row] = await this.drizzle.db
       .select({
         accountId: entitySnapshotsDaily.amazonAdsAccountId,
@@ -88,7 +98,12 @@ export class EntityDiffService {
         state: entitySnapshotsDaily.state,
       })
       .from(entitySnapshotsDaily)
-      .where(and(eq(entitySnapshotsDaily.entityType, entityType as any), eq(entitySnapshotsDaily.entityId, entityId)))
+      .where(
+        and(
+          eq(entitySnapshotsDaily.entityType, entityType as any),
+          eq(entitySnapshotsDaily.entityId, entityId),
+        ),
+      )
       .orderBy(desc(entitySnapshotsDaily.snapshotDate))
       .limit(1);
     return row ?? null;
@@ -104,17 +119,38 @@ export class EntityDiffService {
     fromDate: string,
     toDate: string,
   ): Promise<EntityDiff> {
-    const fromRow = await this.getSnapshot(accountId, entityType, entityId, fromDate);
-    const toRow = await this.getSnapshot(accountId, entityType, entityId, toDate);
+    const fromRow = await this.getSnapshot(
+      accountId,
+      entityType,
+      entityId,
+      fromDate,
+    );
+    const toRow = await this.getSnapshot(
+      accountId,
+      entityType,
+      entityId,
+      toDate,
+    );
     const parentId = toRow?.parentId ?? fromRow?.parentId ?? null;
-    return diffStates(entityType, entityId, parentId, fromRow?.state, toRow?.state);
+    return diffStates(
+      entityType,
+      entityId,
+      parentId,
+      fromRow?.state,
+      toRow?.state,
+    );
   }
 
   // Bulk variant: every entity of one entityType that changed (created,
   // deleted, or modified — unchanged entities are omitted) between two dates
   // for one account. This is what the ledger's external-change detection and
   // D3 call — they scan broadly rather than checking one entity at a time.
-  async diffAccountState(accountId: string, entityType: string, fromDate: string, toDate: string): Promise<EntityDiff[]> {
+  async diffAccountState(
+    accountId: string,
+    entityType: string,
+    fromDate: string,
+    toDate: string,
+  ): Promise<EntityDiff[]> {
     const [fromRows, toRows] = await Promise.all([
       this.listSnapshotsForDate(accountId, entityType, fromDate),
       this.listSnapshotsForDate(accountId, entityType, toDate),
@@ -129,7 +165,13 @@ export class EntityDiffService {
       const fromRow = fromById.get(id);
       const toRow = toById.get(id);
       const parentId = toRow?.parentId ?? fromRow?.parentId ?? null;
-      const diff = diffStates(entityType, id, parentId, fromRow?.state, toRow?.state);
+      const diff = diffStates(
+        entityType,
+        id,
+        parentId,
+        fromRow?.state,
+        toRow?.state,
+      );
       if (diff.changeType !== 'unchanged') diffs.push(diff);
     }
     return diffs;
@@ -140,11 +182,19 @@ export class EntityDiffService {
   // today's batch because it was deleted/archived" apart from "today's batch
   // for this account hasn't run yet / this entity was never captured." Null
   // if the account has never had a single snapshot of this entityType.
-  async getLatestSnapshotDate(accountId: string, entityType: string): Promise<string | null> {
+  async getLatestSnapshotDate(
+    accountId: string,
+    entityType: string,
+  ): Promise<string | null> {
     const [row] = await this.drizzle.db
       .select({ snapshotDate: entitySnapshotsDaily.snapshotDate })
       .from(entitySnapshotsDaily)
-      .where(and(eq(entitySnapshotsDaily.amazonAdsAccountId, accountId), eq(entitySnapshotsDaily.entityType, entityType as any)))
+      .where(
+        and(
+          eq(entitySnapshotsDaily.amazonAdsAccountId, accountId),
+          eq(entitySnapshotsDaily.entityType, entityType as any),
+        ),
+      )
       .orderBy(desc(entitySnapshotsDaily.snapshotDate))
       .limit(1);
     return row?.snapshotDate ?? null;
@@ -168,16 +218,23 @@ export class EntityDiffService {
   // signature still documents what freshness is conceptually being asked
   // about, and so it doesn't silently keep working if a future version of
   // the Go job switches to per-account logging.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for signature clarity, see comment above
   async isSnapshotStale(_accountId: string): Promise<boolean> {
     const [row] = await this.drizzle.db
       .select({ completedAt: syncLogs.completedAt })
       .from(syncLogs)
-      .where(and(eq(syncLogs.syncType, 'entity_snapshots'), eq(syncLogs.status, 'success')))
+      .where(
+        and(
+          eq(syncLogs.syncType, 'entity_snapshots'),
+          eq(syncLogs.status, 'success'),
+        ),
+      )
       .orderBy(desc(syncLogs.completedAt))
       .limit(1);
 
     if (!row?.completedAt) return true; // never synced — treat as stale, not "somehow fresh"
-    const hoursSince = (Date.now() - row.completedAt.getTime()) / (60 * 60 * 1000);
+    const hoursSince =
+      (Date.now() - row.completedAt.getTime()) / (60 * 60 * 1000);
     return hoursSince > STALE_HOURS;
   }
 }
@@ -186,14 +243,20 @@ function diffStates(
   entityType: string,
   entityId: string,
   parentId: string | null,
-  fromState: unknown | undefined,
-  toState: unknown | undefined,
+  fromState: unknown,
+  toState: unknown,
 ): EntityDiff {
   const fromExists = fromState !== undefined && fromState !== null;
   const toExists = toState !== undefined && toState !== null;
 
   if (!fromExists && !toExists) {
-    return { entityType, entityId, parentId, changeType: 'unchanged', changes: [] };
+    return {
+      entityType,
+      entityId,
+      parentId,
+      changeType: 'unchanged',
+      changes: [],
+    };
   }
 
   if (!fromExists && toExists) {
@@ -219,7 +282,10 @@ function diffStates(
   // Both exist — field-level comparison.
   const fromFields = flattenJSON(fromState);
   const toFields = flattenJSON(toState);
-  const allFields = new Set([...Object.keys(fromFields), ...Object.keys(toFields)]);
+  const allFields = new Set([
+    ...Object.keys(fromFields),
+    ...Object.keys(toFields),
+  ]);
 
   const changes: FieldChange[] = [];
   for (const field of allFields) {
@@ -235,7 +301,8 @@ function diffStates(
     });
   }
 
-  const changeType: ChangeType = changes.length === 0 ? 'unchanged' : 'modified';
+  const changeType: ChangeType =
+    changes.length === 0 ? 'unchanged' : 'modified';
   return { entityType, entityId, parentId, changeType, changes };
 }
 
@@ -251,9 +318,14 @@ export function flattenJSON(raw: unknown): Record<string, unknown> {
   return out;
 }
 
-function flattenValue(prefix: string, v: unknown, out: Record<string, unknown>): void {
-  const isPlainObject = typeof v === 'object' && v !== null && !Array.isArray(v);
-  if (!isPlainObject || Object.keys(v as object).length === 0) {
+function flattenValue(
+  prefix: string,
+  v: unknown,
+  out: Record<string, unknown>,
+): void {
+  const isPlainObject =
+    typeof v === 'object' && v !== null && !Array.isArray(v);
+  if (!isPlainObject || Object.keys(v).length === 0) {
     if (prefix !== '') out[prefix] = v;
     return;
   }
@@ -279,8 +351,19 @@ function deepEqual(a: unknown, b: unknown): boolean {
 // a present one, even null.
 export function valuesMatch(a: unknown, b: unknown): boolean {
   if (a === null || a === undefined || b === undefined) return false;
-  const numA = typeof a === 'number' ? a : typeof a === 'string' && a.trim() !== '' ? Number(a) : NaN;
-  const numB = typeof b === 'number' ? b : typeof b === 'string' && b.trim() !== '' ? Number(b) : NaN;
-  if (!Number.isNaN(numA) && !Number.isNaN(numB)) return Math.abs(numA - numB) < 0.005;
+  const numA =
+    typeof a === 'number'
+      ? a
+      : typeof a === 'string' && a.trim() !== ''
+        ? Number(a)
+        : NaN;
+  const numB =
+    typeof b === 'number'
+      ? b
+      : typeof b === 'string' && b.trim() !== ''
+        ? Number(b)
+        : NaN;
+  if (!Number.isNaN(numA) && !Number.isNaN(numB))
+    return Math.abs(numA - numB) < 0.005;
   return String(a) === String(b);
 }

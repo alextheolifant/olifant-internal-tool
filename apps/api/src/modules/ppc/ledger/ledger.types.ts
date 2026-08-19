@@ -1,5 +1,8 @@
 export type LedgerSource = 'engine' | 'external';
-export type LedgerCategory = 'bulk_operation' | 'amazon_recommendation' | 'manual';
+export type LedgerCategory =
+  | 'bulk_operation'
+  | 'amazon_recommendation'
+  | 'manual';
 
 export interface NewLedgerEntry {
   clientId: string;

@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
 import { DrizzleService } from '../../../db/drizzle.service';
-import { ppcClientConfigs, ruleConditionState, taskCandidates } from '../../../db/schema';
+import {
+  ppcClientConfigs,
+  ruleConditionState,
+  taskCandidates,
+} from '../../../db/schema';
 import { REGISTERED_RULES } from '../rules/rules.registry';
 import { computeActionFingerprint } from './action-fingerprint';
 import { buildEvidence, EvidenceProvenanceResolver } from './evidence';
@@ -54,7 +58,9 @@ export class TaskPromotionService {
     for (const candidate of pending) {
       const band = RULE_BAND_BY_ID[candidate.ruleId];
       if (!band) {
-        this.logger.warn(`candidate ${candidate.id}: no registered rule for ${candidate.ruleId} — skipping`);
+        this.logger.warn(
+          `candidate ${candidate.id}: no registered rule for ${candidate.ruleId} — skipping`,
+        );
         summary.skipped += 1;
         continue;
       }
@@ -67,7 +73,9 @@ export class TaskPromotionService {
           candidate.evidence as Record<string, unknown>,
         );
       } catch (err) {
-        this.logger.warn(`candidate ${candidate.id}: ${(err as Error).message} — skipping`);
+        this.logger.warn(
+          `candidate ${candidate.id}: ${(err as Error).message} — skipping`,
+        );
         summary.skipped += 1;
         continue;
       }
@@ -85,9 +93,14 @@ export class TaskPromotionService {
         candidate.entityType,
         candidate.entityId,
       );
-      const evidence = buildEvidence(candidate.evidence as Record<string, unknown>, provenance);
+      const evidence = buildEvidence(
+        candidate.evidence as Record<string, unknown>,
+        provenance,
+      );
 
-      const clientMultiplier = await this.resolveClientMultiplier(candidate.clientId);
+      const clientMultiplier = await this.resolveClientMultiplier(
+        candidate.clientId,
+      );
       const estMinutes = estMinutesFor(candidate.ruleId, content.type);
       const priorityScore = computePriorityScore({
         impactMonthlyUsd: content.impactMonthlyUsd,
@@ -101,7 +114,11 @@ export class TaskPromotionService {
         evidence: candidate.evidence as Record<string, unknown>,
       });
 
-      const existing = await this.taskRepo.findOpenByFingerprint(candidate.clientId, candidate.ruleId, fingerprint);
+      const existing = await this.taskRepo.findOpenByFingerprint(
+        candidate.clientId,
+        candidate.ruleId,
+        fingerprint,
+      );
 
       if (existing) {
         await this.taskRepo.updateEvidence(existing.id, {
@@ -146,7 +163,9 @@ export class TaskPromotionService {
         .where(eq(taskCandidates.id, candidate.id));
     }
 
-    this.logger.log(`promoteNewCandidates: ${JSON.stringify(summary)} (${pending.length} candidates seen)`);
+    this.logger.log(
+      `promoteNewCandidates: ${JSON.stringify(summary)} (${pending.length} candidates seen)`,
+    );
     return summary;
   }
 
@@ -161,26 +180,34 @@ export class TaskPromotionService {
     let expired = 0;
     // Per (client, rule) via the repository, so open-status filtering lives
     // in one place — see task.repository.ts's OPEN_STATUSES scoping.
-    const clients = await this.drizzle.db.query.clients.findMany({ columns: { id: true } });
+    const clients = await this.drizzle.db.query.clients.findMany({
+      columns: { id: true },
+    });
     for (const client of clients) {
       for (const rule of REGISTERED_RULES) {
-        const open = await this.taskRepo.findOpenByClientRule(client.id, rule.id);
+        const open = await this.taskRepo.findOpenByClientRule(
+          client.id,
+          rule.id,
+        );
         for (const task of open) {
-          const state = await this.drizzle.db.query.ruleConditionState.findFirst({
-            where: and(
-              eq(ruleConditionState.clientId, client.id),
-              eq(ruleConditionState.ruleId, rule.id),
-              eq(ruleConditionState.entityType, task.entityType),
-              eq(ruleConditionState.entityId, task.entityId),
-            ),
-          });
+          const state =
+            await this.drizzle.db.query.ruleConditionState.findFirst({
+              where: and(
+                eq(ruleConditionState.clientId, client.id),
+                eq(ruleConditionState.ruleId, rule.id),
+                eq(ruleConditionState.entityType, task.entityType),
+                eq(ruleConditionState.entityId, task.entityId),
+              ),
+            });
           // No state at all means this entity was never evaluated (e.g. the
           // client was frozen this run) — leave it alone. Only a CONFIRMED
           // clear (isActive === false) expires it.
           if (state && state.isActive === false) {
             await this.taskRepo.expire(task.id);
             expired += 1;
-            this.logger.log(`expired ${task.id} (${rule.id}/${task.entityId}): clear condition now holds`);
+            this.logger.log(
+              `expired ${task.id} (${rule.id}/${task.entityId}): clear condition now holds`,
+            );
           }
         }
       }
@@ -192,9 +219,14 @@ export class TaskPromotionService {
   // rule whose clear condition never holds because the underlying issue was
   // fixed manually outside any tracked signal).
   async expireStaleTasks(now: Date = new Date()): Promise<number> {
-    const cutoff = new Date(now.getTime() - HARD_CEILING_DAYS * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(
+      now.getTime() - HARD_CEILING_DAYS * 24 * 60 * 60 * 1000,
+    );
     const ids = await this.taskRepo.expireOlderThan(cutoff);
-    if (ids.length > 0) this.logger.log(`expired ${ids.length} task(s) past the ${HARD_CEILING_DAYS}-day ceiling`);
+    if (ids.length > 0)
+      this.logger.log(
+        `expired ${ids.length} task(s) past the ${HARD_CEILING_DAYS}-day ceiling`,
+      );
     return ids.length;
   }
 

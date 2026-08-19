@@ -1,4 +1,8 @@
-import type { RuleConditionResult, RuleDefinition, RuleEvalContext } from './types';
+import type {
+  RuleConditionResult,
+  RuleDefinition,
+  RuleEvalContext,
+} from './types';
 
 // How far back D3 looks for unattributed pauses — see
 // ledger.repository.ts's findUnattributedPauses for why a window exists at
@@ -33,7 +37,10 @@ export const d3UnintendedPauseRule: RuleDefinition = {
     const sinceDate = new Date(ctx.evaluationDate);
     sinceDate.setUTCDate(sinceDate.getUTCDate() - LOOKBACK_DAYS);
 
-    const rows = await ctx.ledger.findUnattributedPauses(ctx.clientId, sinceDate);
+    const rows = await ctx.ledger.findUnattributedPauses(
+      ctx.clientId,
+      sinceDate,
+    );
 
     return rows.map((row) => ({
       entityType: row.entityType,

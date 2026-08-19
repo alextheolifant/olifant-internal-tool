@@ -50,7 +50,10 @@ function buildSavingsStub() {
       concludedWithoutSavings: 0,
       noConcludedMonitors: true,
     }),
-    getForClient: async () => ({ verifiedSavingsMonthly: 0, noConcludedMonitors: true }),
+    getForClient: async () => ({
+      verifiedSavingsMonthly: 0,
+      noConcludedMonitors: true,
+    }),
   } as unknown as SavingsService;
 }
 
@@ -61,7 +64,10 @@ describe('TodayService', () => {
       { ruleId: 'G9', clientId: 'c1', clientName: 'Acme', evidence: {} },
     ];
     const drizzle = buildDrizzleMock(rows);
-    const service = new TodayService(drizzle as unknown as DrizzleService, buildSavingsStub());
+    const service = new TodayService(
+      drizzle as unknown as DrizzleService,
+      buildSavingsStub(),
+    );
 
     const result = await service.getToday('2026-08-07');
 
@@ -79,7 +85,10 @@ describe('TodayService', () => {
       { ruleId: 'G9', clientId: 'c1', clientName: 'Acme', evidence: {} },
     ];
     const drizzle = buildDrizzleMock(rows);
-    const service = new TodayService(drizzle as unknown as DrizzleService, buildSavingsStub());
+    const service = new TodayService(
+      drizzle as unknown as DrizzleService,
+      buildSavingsStub(),
+    );
 
     const result = await service.getToday('2026-08-07');
 
@@ -88,9 +97,19 @@ describe('TodayService', () => {
   });
 
   it('ignores candidates for unrecognized or non-D/G-band rules', async () => {
-    const rows = [{ ruleId: 'does-not-exist', clientId: 'c1', clientName: 'Acme', evidence: {} }];
+    const rows = [
+      {
+        ruleId: 'does-not-exist',
+        clientId: 'c1',
+        clientName: 'Acme',
+        evidence: {},
+      },
+    ];
     const drizzle = buildDrizzleMock(rows);
-    const service = new TodayService(drizzle as unknown as DrizzleService, buildSavingsStub());
+    const service = new TodayService(
+      drizzle as unknown as DrizzleService,
+      buildSavingsStub(),
+    );
 
     const result = await service.getToday('2026-08-07');
 
@@ -103,7 +122,10 @@ describe('TodayService', () => {
 
   it('reports verifiedSavings as null-and-pending (not 0) while no monitor has concluded', async () => {
     const drizzle = buildDrizzleMock([]);
-    const service = new TodayService(drizzle as unknown as DrizzleService, buildSavingsStub());
+    const service = new TodayService(
+      drizzle as unknown as DrizzleService,
+      buildSavingsStub(),
+    );
 
     const result = await service.getToday('2026-08-07');
 
@@ -124,9 +146,15 @@ describe('TodayService', () => {
         concludedWithoutSavings: 2,
         noConcludedMonitors: false,
       }),
-      getForClient: async () => ({ verifiedSavingsMonthly: 137.5, noConcludedMonitors: false }),
+      getForClient: async () => ({
+        verifiedSavingsMonthly: 137.5,
+        noConcludedMonitors: false,
+      }),
     } as unknown as SavingsService;
-    const service = new TodayService(drizzle as unknown as DrizzleService, savings);
+    const service = new TodayService(
+      drizzle as unknown as DrizzleService,
+      savings,
+    );
 
     const result = await service.getToday('2026-08-07');
 

@@ -4,7 +4,9 @@ import { QueueService } from './queue.service';
 import { TaskRepository, type TaskRow } from './task.repository';
 
 // Row builder — only the fields the queue payload reads.
-function taskRow(over: Partial<TaskRow> & { id: string }): TaskRow & { clientName: string } {
+function taskRow(
+  over: Partial<TaskRow> & { id: string },
+): TaskRow & { clientName: string } {
   return {
     clientId: 'client-1',
     profile: 'US',
@@ -14,8 +16,21 @@ function taskRow(over: Partial<TaskRow> & { id: string }): TaskRow & { clientNam
     entityId: 'c1',
     type: 'investigate',
     title: 'A task',
-    action: { entityType: 'campaign', campaignId: 'c1', campaignName: 'C', adGroupId: null, oldValue: null, newValue: null, field: null },
-    evidence: { metrics: {}, window: null, provenance: { reportJobId: null, syncedAt: null, syncType: null }, fallbacks: {} },
+    action: {
+      entityType: 'campaign',
+      campaignId: 'c1',
+      campaignName: 'C',
+      adGroupId: null,
+      oldValue: null,
+      newValue: null,
+      field: null,
+    },
+    evidence: {
+      metrics: {},
+      window: null,
+      provenance: { reportJobId: null, syncedAt: null, syncType: null },
+      fallbacks: {},
+    },
     instructions: [],
     impactMonthlyUsd: null,
     impactBasis: null,
@@ -38,11 +53,16 @@ function taskRow(over: Partial<TaskRow> & { id: string }): TaskRow & { clientNam
     updatedAt: new Date('2026-08-01T00:00:00Z'),
     clientName: 'Acme',
     ...over,
-  } as TaskRow & { clientName: string };
+  };
 }
 
-function buildService(rows: (TaskRow & { clientName: string })[], total = rows.length) {
-  const taskRepo = { queryQueue: jest.fn().mockResolvedValue({ rows, total }) } as unknown as TaskRepository;
+function buildService(
+  rows: (TaskRow & { clientName: string })[],
+  total = rows.length,
+) {
+  const taskRepo = {
+    queryQueue: jest.fn().mockResolvedValue({ rows, total }),
+  } as unknown as TaskRepository;
   const monitors = {} as unknown as MonitorRepository;
   return new QueueService({} as unknown as DrizzleService, taskRepo, monitors);
 }
@@ -50,8 +70,14 @@ function buildService(rows: (TaskRow & { clientName: string })[], total = rows.l
 describe('QueueService.list — impact bar', () => {
   it('expresses each impact as a fraction of the largest in the result set', async () => {
     const svc = buildService([
-      taskRow({ id: 'a', impactMonthlyUsd: '400.00' as unknown as TaskRow['impactMonthlyUsd'] }),
-      taskRow({ id: 'b', impactMonthlyUsd: '100.00' as unknown as TaskRow['impactMonthlyUsd'] }),
+      taskRow({
+        id: 'a',
+        impactMonthlyUsd: '400.00',
+      }),
+      taskRow({
+        id: 'b',
+        impactMonthlyUsd: '100.00',
+      }),
     ]);
     const res = await svc.list({});
     expect(res.rows[0].impactBarFraction).toBe(1);
@@ -60,8 +86,14 @@ describe('QueueService.list — impact bar', () => {
 
   it('distinguishes "no impact figure" (null) from "smallest here" (0)', async () => {
     const svc = buildService([
-      taskRow({ id: 'a', impactMonthlyUsd: '400.00' as unknown as TaskRow['impactMonthlyUsd'] }),
-      taskRow({ id: 'b', impactMonthlyUsd: '0.00' as unknown as TaskRow['impactMonthlyUsd'] }),
+      taskRow({
+        id: 'a',
+        impactMonthlyUsd: '400.00',
+      }),
+      taskRow({
+        id: 'b',
+        impactMonthlyUsd: '0.00',
+      }),
       taskRow({ id: 'c', impactMonthlyUsd: null }),
     ]);
     const res = await svc.list({});
@@ -70,7 +102,10 @@ describe('QueueService.list — impact bar', () => {
   });
 
   it('does not divide by zero when nothing in the set has impact', async () => {
-    const svc = buildService([taskRow({ id: 'a', impactMonthlyUsd: null }), taskRow({ id: 'b', impactMonthlyUsd: null })]);
+    const svc = buildService([
+      taskRow({ id: 'a', impactMonthlyUsd: null }),
+      taskRow({ id: 'b', impactMonthlyUsd: null }),
+    ]);
     const res = await svc.list({});
     expect(res.rows.every((r) => r.impactBarFraction === null)).toBe(true);
   });
@@ -83,7 +118,9 @@ describe('QueueService.list — blocked tasks', () => {
   // ("waits on TSK-…") so it's correct whenever blocking does start being
   // written.
   it('surfaces blocked_by so the sub-line can read "waits on TSK-…"', async () => {
-    const svc = buildService([taskRow({ id: 'TSK-1', status: 'blocked', blockedBy: 'TSK-0421' })]);
+    const svc = buildService([
+      taskRow({ id: 'TSK-1', status: 'blocked', blockedBy: 'TSK-0421' }),
+    ]);
     const res = await svc.list({});
     expect(res.rows[0].blockedBy).toBe('TSK-0421');
     expect(res.rows[0].status).toBe('blocked');
@@ -113,7 +150,14 @@ describe('QueueService.list — paging', () => {
 
 describe('QueueService.list — row shape', () => {
   it('carries the sub-line components the table renders', async () => {
-    const svc = buildService([taskRow({ id: 'TSK-9', ruleId: 'W1', type: 'negation', confidence: 'medium' })]);
+    const svc = buildService([
+      taskRow({
+        id: 'TSK-9',
+        ruleId: 'W1',
+        type: 'negation',
+        confidence: 'medium',
+      }),
+    ]);
     const [row] = (await svc.list({})).rows;
     expect(row.id).toBe('TSK-9');
     expect(row.clientName).toBe('Acme');

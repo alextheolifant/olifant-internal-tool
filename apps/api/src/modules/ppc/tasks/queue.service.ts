@@ -11,7 +11,11 @@ import {
 import { MonitorRepository } from '../monitor/monitor.repository';
 import type { MonitorVerdict } from '../monitor/monitor.types';
 import { parseSearchTermEntityId } from '../rules/term-normalization';
-import { expandableKeysFor, resolveMetric, type FactTable } from './fact-source';
+import {
+  expandableKeysFor,
+  resolveMetric,
+  type FactTable,
+} from './fact-source';
 import { estMinutesFor } from './priority';
 import type {
   CrossCheckWinner,
@@ -24,8 +28,8 @@ import type {
   QueueRow,
   TaskDetail,
 } from './queue.types';
-import { TaskRepository, type TaskRow } from './task.repository';
-import type { TaskAction, TaskConfidence, TaskEvidence, TaskType } from './task.types';
+import { TaskRepository } from './task.repository';
+import type { TaskAction, TaskEvidence } from './task.types';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -73,7 +77,8 @@ export class QueueService {
     }, 0);
 
     const queueRows: QueueRow[] = rows.map((r) => {
-      const impact = r.impactMonthlyUsd !== null ? Number(r.impactMonthlyUsd) : null;
+      const impact =
+        r.impactMonthlyUsd !== null ? Number(r.impactMonthlyUsd) : null;
       return {
         id: r.id,
         title: r.title,
@@ -81,13 +86,14 @@ export class QueueService {
         clientName: r.clientName,
         ruleId: r.ruleId,
         band: r.band,
-        type: r.type as TaskType,
+        type: r.type,
         status: r.status,
-        confidence: r.confidence as TaskConfidence,
+        confidence: r.confidence,
         priorityScore: r.priorityScore,
         impactMonthlyUsd: impact,
-        impactBarFraction: impact === null ? null : maxImpact > 0 ? impact / maxImpact : 0,
-        estMinutes: estMinutesFor(r.ruleId, r.type as TaskType),
+        impactBarFraction:
+          impact === null ? null : maxImpact > 0 ? impact / maxImpact : 0,
+        estMinutes: estMinutesFor(r.ruleId, r.type),
         blockedBy: r.blockedBy,
         assignee: r.assignee,
         createdAt: r.createdAt.toISOString(),
@@ -108,7 +114,8 @@ export class QueueService {
     const factTable = resolveMetric(syncType, '__probe__').factTable;
 
     const monitor = await this.monitors.findByTaskId(id);
-    const verdict = (monitor?.verdict30d ?? monitor?.checkpoint14d) as MonitorVerdict | null;
+    const verdict = (monitor?.verdict30d ??
+      monitor?.checkpoint14d) as MonitorVerdict | null;
 
     return {
       id: task.id,
@@ -117,14 +124,15 @@ export class QueueService {
       clientName: task.clientName,
       title: task.title,
       status: task.status,
-      type: task.type as TaskType,
+      type: task.type,
       band: task.band,
-      confidence: task.confidence as TaskConfidence,
+      confidence: task.confidence,
       profile: task.profile,
       priorityScore: task.priorityScore,
-      estMinutes: estMinutesFor(task.ruleId, task.type as TaskType),
+      estMinutes: estMinutesFor(task.ruleId, task.type),
       requiresReview: task.requiresReview,
-      impactMonthlyUsd: task.impactMonthlyUsd !== null ? Number(task.impactMonthlyUsd) : null,
+      impactMonthlyUsd:
+        task.impactMonthlyUsd !== null ? Number(task.impactMonthlyUsd) : null,
       impactBasis: task.impactBasis,
       instructions: (task.instructions as string[]) ?? [],
       // Harvest-only, and the harvest rule (W4) doesn't exist yet. Declared
@@ -203,17 +211,27 @@ export class QueueService {
 
     const [campaignSeries, entitySeries, latestFactDate] = await Promise.all([
       this.campaignSeries(task.clientId, campaignId, start, end),
-      this.entitySeries(accountIds, task.entityType, task.entityId, campaignId, start, end),
+      this.entitySeries(
+        accountIds,
+        task.entityType,
+        task.entityId,
+        campaignId,
+        start,
+        end,
+      ),
       this.latestFactDate(),
     ]);
 
     const provisionalFrom = addDays(todayISO(), -RESTATEMENT_DAYS);
-    const verdict = (monitor.verdict30d ?? monitor.checkpoint14d) as MonitorVerdict | null;
+    const verdict = (monitor.verdict30d ??
+      monitor.checkpoint14d) as MonitorVerdict | null;
 
     return {
       taskId: id,
       executionDate: monitor.executionDate,
-      entitySeries: entitySeries ? markProvisional(entitySeries, provisionalFrom) : null,
+      entitySeries: entitySeries
+        ? markProvisional(entitySeries, provisionalFrom)
+        : null,
       entityType: task.entityType,
       entityId: task.entityId,
       campaignSeries: markProvisional(campaignSeries, provisionalFrom),
@@ -264,7 +282,13 @@ export class QueueService {
     const rows = await this.factRows(
       resolution.factTable as FactTable,
       resolution.column as string,
-      { clientId: task.clientId, accountIds, entityType: task.entityType, entityId: task.entityId, campaignId },
+      {
+        clientId: task.clientId,
+        accountIds,
+        entityType: task.entityType,
+        entityId: task.entityId,
+        campaignId,
+      },
       window.start,
       window.end,
     );
@@ -282,7 +306,13 @@ export class QueueService {
   private async factRows(
     table: FactTable,
     column: string,
-    scope: { clientId: string; accountIds: string[]; entityType: string; entityId: string; campaignId: string },
+    scope: {
+      clientId: string;
+      accountIds: string[];
+      entityType: string;
+      entityId: string;
+      campaignId: string;
+    },
     start: string,
     end: string,
   ): Promise<FactRow[]> {
@@ -299,7 +329,10 @@ export class QueueService {
         })
         .from(campaignMetricsDaily)
         .innerJoin(campaigns, eq(campaigns.id, campaignMetricsDaily.campaignId))
-        .innerJoin(amazonAdsAccounts, eq(amazonAdsAccounts.id, campaigns.amazonAdsAccountId))
+        .innerJoin(
+          amazonAdsAccounts,
+          eq(amazonAdsAccounts.id, campaigns.amazonAdsAccountId),
+        )
         .where(
           and(
             eq(amazonAdsAccounts.clientId, scope.clientId),
@@ -331,7 +364,10 @@ export class QueueService {
         .from(searchTermMetricsDaily)
         .where(
           and(
-            inArray(searchTermMetricsDaily.amazonAdsAccountId, scope.accountIds),
+            inArray(
+              searchTermMetricsDaily.amazonAdsAccountId,
+              scope.accountIds,
+            ),
             eq(searchTermMetricsDaily.searchTerm, term),
             eq(searchTermMetricsDaily.campaignId, campaignId),
             gte(searchTermMetricsDaily.date, start),
@@ -382,7 +418,10 @@ export class QueueService {
       })
       .from(campaignMetricsDaily)
       .innerJoin(campaigns, eq(campaigns.id, campaignMetricsDaily.campaignId))
-      .innerJoin(amazonAdsAccounts, eq(amazonAdsAccounts.id, campaigns.amazonAdsAccountId))
+      .innerJoin(
+        amazonAdsAccounts,
+        eq(amazonAdsAccounts.id, campaigns.amazonAdsAccountId),
+      )
       .where(
         and(
           eq(amazonAdsAccounts.clientId, clientId),
@@ -422,7 +461,10 @@ export class QueueService {
           and(
             inArray(searchTermMetricsDaily.amazonAdsAccountId, accountIds),
             eq(searchTermMetricsDaily.searchTerm, parsed?.term ?? entityId),
-            eq(searchTermMetricsDaily.campaignId, parsed?.campaignId ?? campaignId),
+            eq(
+              searchTermMetricsDaily.campaignId,
+              parsed?.campaignId ?? campaignId,
+            ),
             gte(searchTermMetricsDaily.date, start),
             lte(searchTermMetricsDaily.date, end),
           ),
@@ -476,13 +518,17 @@ export class QueueService {
   }
 }
 
-function buildCrossCheck(metrics: Record<string, unknown>): TaskDetail['crossCheck'] {
+function buildCrossCheck(
+  metrics: Record<string, unknown>,
+): TaskDetail['crossCheck'] {
   // Only rules that actually perform a cross-check set this flag. Absent
   // means "this rule doesn't cross-check", which is different from
   // "checked and found nothing" (performed: true, winners: []).
   if (metrics.winnerCrossCheckPerformed !== true) return null;
 
-  const raw = Array.isArray(metrics.winnersElsewhere) ? metrics.winnersElsewhere : [];
+  const raw = Array.isArray(metrics.winnersElsewhere)
+    ? metrics.winnersElsewhere
+    : [];
   const winners: CrossCheckWinner[] = raw.map((w) => {
     const o = w as Record<string, unknown>;
     return {
@@ -526,7 +572,10 @@ function toPoint(r: {
   };
 }
 
-function markProvisional(points: PerformancePoint[], provisionalFrom: string): PerformancePoint[] {
+function markProvisional(
+  points: PerformancePoint[],
+  provisionalFrom: string,
+): PerformancePoint[] {
   return points.map((p) => ({ ...p, provisional: p.date >= provisionalFrom }));
 }
 
@@ -535,7 +584,12 @@ function numeric(row: Record<string, unknown>, column: string): FactRow {
   const out: FactRow = { date: String(row.date) };
   for (const [k, v] of Object.entries(row)) {
     if (k === 'date') continue;
-    out[k] = v === null || v === undefined ? null : typeof v === 'number' ? v : Number(v);
+    out[k] =
+      v === null || v === undefined
+        ? null
+        : typeof v === 'number'
+          ? v
+          : Number(v);
   }
   void column;
   return out;

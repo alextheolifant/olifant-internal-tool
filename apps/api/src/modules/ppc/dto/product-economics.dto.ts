@@ -1,4 +1,12 @@
-import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 const STRATEGIES = ['launch', 'growth', 'maintain'] as const;
 export type PpcStrategy = (typeof STRATEGIES)[number];

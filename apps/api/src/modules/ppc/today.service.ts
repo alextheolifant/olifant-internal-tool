@@ -68,12 +68,19 @@ export class TodayService {
     private readonly savings: SavingsService,
   ) {}
 
-  async getToday(evaluationDate: string, clientIdFilter?: string): Promise<TodayResponse> {
+  async getToday(
+    evaluationDate: string,
+    clientIdFilter?: string,
+  ): Promise<TodayResponse> {
     const { start, end } = dayBoundsUTC(evaluationDate);
     const rulesById = ruleBandById();
 
-    const conditions = [gte(taskCandidates.evaluatedAt, start), lt(taskCandidates.evaluatedAt, end)];
-    if (clientIdFilter) conditions.push(eq(taskCandidates.clientId, clientIdFilter));
+    const conditions = [
+      gte(taskCandidates.evaluatedAt, start),
+      lt(taskCandidates.evaluatedAt, end),
+    ];
+    if (clientIdFilter)
+      conditions.push(eq(taskCandidates.clientId, clientIdFilter));
 
     const rows = await this.drizzle.db
       .select({
@@ -114,13 +121,18 @@ export class TodayService {
       ? await this.savings.getForClient(clientIdFilter)
       : await (async () => {
           const s = await this.savings.getSummary();
-          return { verifiedSavingsMonthly: s.agencyVerifiedSavingsMonthly, noConcludedMonitors: s.noConcludedMonitors };
+          return {
+            verifiedSavingsMonthly: s.agencyVerifiedSavingsMonthly,
+            noConcludedMonitors: s.noConcludedMonitors,
+          };
         })();
 
     return {
       evaluationDate,
       statCards: {
-        verifiedSavings: savings.noConcludedMonitors ? null : savings.verifiedSavingsMonthly,
+        verifiedSavings: savings.noConcludedMonitors
+          ? null
+          : savings.verifiedSavingsMonthly,
         verifiedSavingsPending: savings.noConcludedMonitors,
         openTasksCount: rows.length,
         dollarsAtStake: null,

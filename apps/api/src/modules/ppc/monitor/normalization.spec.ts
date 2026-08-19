@@ -47,16 +47,22 @@ describe('coefficientOfVariation', () => {
 
 describe('assessBaseline', () => {
   it('accepts a steady, well-funded baseline', () => {
-    expect(assessBaseline(aggregateWindow(days(14, 20), 14), Array(14).fill(20), T)).toBeNull();
+    expect(
+      assessBaseline(aggregateWindow(days(14, 20), 14), Array(14).fill(20), T),
+    ).toBeNull();
   });
 
   it('rejects a baseline below the minimum spend', () => {
-    expect(assessBaseline(aggregateWindow(days(14, 1), 14), Array(14).fill(1), T)).toBe('baseline_spend_too_low');
+    expect(
+      assessBaseline(aggregateWindow(days(14, 1), 14), Array(14).fill(1), T),
+    ).toBe('baseline_spend_too_low');
   });
 
   it('rejects a baseline with too few populated days', () => {
     // $200 total but only 4 days of it.
-    expect(assessBaseline(aggregateWindow(days(4, 50), 14), Array(4).fill(50), T)).toBe('baseline_days_too_sparse');
+    expect(
+      assessBaseline(aggregateWindow(days(4, 50), 14), Array(4).fill(50), T),
+    ).toBe('baseline_days_too_sparse');
   });
 
   it('rejects a baseline too volatile to represent a normal level', () => {
@@ -69,17 +75,23 @@ describe('assessBaseline', () => {
       impressions: 0,
       orders: 0,
     }));
-    expect(assessBaseline(aggregateWindow(rows, 14), spikes, T)).toBe('baseline_too_volatile');
+    expect(assessBaseline(aggregateWindow(rows, 14), spikes, T)).toBe(
+      'baseline_too_volatile',
+    );
   });
 
   it('rejects an empty baseline', () => {
-    expect(assessBaseline(aggregateWindow([], 14), [], T)).toBe('no_baseline_data');
+    expect(assessBaseline(aggregateWindow([], 14), [], T)).toBe(
+      'no_baseline_data',
+    );
   });
 
   it('rejects a post window the sync has not reached, rather than reading it as a 100% collapse', () => {
     const goodPre = aggregateWindow(days(14, 20), 14);
     const emptyPost = aggregateWindow([], 3);
-    expect(assessBaseline(goodPre, Array(14).fill(20), T, emptyPost)).toBe('no_post_window_data');
+    expect(assessBaseline(goodPre, Array(14).fill(20), T, emptyPost)).toBe(
+      'no_post_window_data',
+    );
   });
 });
 
@@ -167,7 +179,7 @@ describe('conservativeSavingsMonthly', () => {
     expect(conservativeSavingsMonthly(c)).toBeCloseTo(10 * 30, 5);
   });
 
-  it('caps the counterfactual at the entity\'s own pre-rate when account trend rose', () => {
+  it("caps the counterfactual at the entity's own pre-rate when account trend rose", () => {
     // Account doubled. Trend-adjusted counterfactual would be $40/day, but
     // this entity never spent $40/day — claiming that is extrapolation.
     const c = computeNormalizedComparison(
@@ -224,7 +236,7 @@ describe('normalizedPctChange', () => {
 });
 
 describe('buildSpendSummary', () => {
-  it('follows the brief\'s pattern, stating the account movement it factored out', () => {
+  it("follows the brief's pattern, stating the account movement it factored out", () => {
     const c = computeNormalizedComparison(
       aggregateWindow(days(14, 1.4), 14),
       aggregateWindow(days(14, 0), 14),

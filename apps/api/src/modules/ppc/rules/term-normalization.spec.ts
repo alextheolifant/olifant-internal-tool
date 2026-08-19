@@ -5,9 +5,11 @@ import {
 } from './term-normalization';
 
 describe('normalizeSearchTerm', () => {
-  it('folds case — the brief\'s own example', () => {
+  it("folds case — the brief's own example", () => {
     expect(normalizeSearchTerm('Coat Defense')).toBe('coat defense');
-    expect(normalizeSearchTerm('COAT DEFENSE')).toBe(normalizeSearchTerm('coat defense'));
+    expect(normalizeSearchTerm('COAT DEFENSE')).toBe(
+      normalizeSearchTerm('coat defense'),
+    );
   });
 
   it('collapses and trims whitespace', () => {
@@ -25,11 +27,15 @@ describe('normalizeSearchTerm', () => {
     // The failure this prevents: "dog's" → "dog s" would never match "dogs".
     expect(normalizeSearchTerm("dog's shampoo")).toBe('dogs shampoo');
     expect(normalizeSearchTerm('dog’s shampoo')).toBe('dogs shampoo');
-    expect(normalizeSearchTerm("dog's shampoo")).toBe(normalizeSearchTerm('dogs shampoo'));
+    expect(normalizeSearchTerm("dog's shampoo")).toBe(
+      normalizeSearchTerm('dogs shampoo'),
+    );
   });
 
   it('drops sentence punctuation', () => {
-    expect(normalizeSearchTerm('coat defense, 16 oz.')).toBe('coat defense 16 oz');
+    expect(normalizeSearchTerm('coat defense, 16 oz.')).toBe(
+      'coat defense 16 oz',
+    );
     expect(normalizeSearchTerm('coat defense!')).toBe('coat defense');
   });
 
@@ -52,7 +58,10 @@ describe('normalizeSearchTerm', () => {
 describe('searchTermEntityId / parseSearchTermEntityId', () => {
   it('round-trips a campaign and a verbatim term', () => {
     const id = searchTermEntityId('12345', 'coat defense');
-    expect(parseSearchTermEntityId(id)).toEqual({ campaignId: '12345', term: 'coat defense' });
+    expect(parseSearchTermEntityId(id)).toEqual({
+      campaignId: '12345',
+      term: 'coat defense',
+    });
   });
 
   it('keeps the term verbatim, not normalized — the executor must find this exact string', () => {
@@ -62,11 +71,16 @@ describe('searchTermEntityId / parseSearchTermEntityId', () => {
 
   it('splits on the FIRST separator so a term containing "::" survives', () => {
     const id = searchTermEntityId('12345', 'weird::term');
-    expect(parseSearchTermEntityId(id)).toEqual({ campaignId: '12345', term: 'weird::term' });
+    expect(parseSearchTermEntityId(id)).toEqual({
+      campaignId: '12345',
+      term: 'weird::term',
+    });
   });
 
   it('gives distinct ids for the same term in different campaigns (Guard 1 as identity)', () => {
-    expect(searchTermEntityId('111', 'coat defense')).not.toBe(searchTermEntityId('222', 'coat defense'));
+    expect(searchTermEntityId('111', 'coat defense')).not.toBe(
+      searchTermEntityId('222', 'coat defense'),
+    );
   });
 
   it('returns null for an id that carries no separator', () => {

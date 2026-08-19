@@ -29,7 +29,9 @@ export interface GuardDecision {
   nextState: PriorConditionState;
 }
 
-export function applyPersistenceAndHysteresis(input: GuardInput): GuardDecision {
+export function applyPersistenceAndHysteresis(
+  input: GuardInput,
+): GuardDecision {
   const prior = input.prior ?? { isActive: false, streakCount: 0 };
 
   if (prior.isActive) {
@@ -37,13 +39,22 @@ export function applyPersistenceAndHysteresis(input: GuardInput): GuardDecision 
     // long as it holds at the looser clear bar; drop out entirely once it
     // falls below that.
     if (input.holdsAtClear) {
-      return { shouldEmit: true, nextState: { isActive: true, streakCount: 0 } };
+      return {
+        shouldEmit: true,
+        nextState: { isActive: true, streakCount: 0 },
+      };
     }
-    return { shouldEmit: false, nextState: { isActive: false, streakCount: 0 } };
+    return {
+      shouldEmit: false,
+      nextState: { isActive: false, streakCount: 0 },
+    };
   }
 
   if (!input.holdsAtEnter) {
-    return { shouldEmit: false, nextState: { isActive: false, streakCount: 0 } };
+    return {
+      shouldEmit: false,
+      nextState: { isActive: false, streakCount: 0 },
+    };
   }
 
   if (input.band === 'D') {

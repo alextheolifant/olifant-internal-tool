@@ -15,16 +15,28 @@ import { LedgerService } from '../ledger/ledger.service';
 import { VerificationService } from '../verification/verification.service';
 import { QueueService } from './queue.service';
 import type { BulkApproveResponse, BulkApproveResult } from './queue.types';
-import { assertValidTransition, InvalidTaskTransitionError } from './task-lifecycle';
+import {
+  assertValidTransition,
+  InvalidTaskTransitionError,
+} from './task-lifecycle';
 import { TaskPromotionService } from './task-promotion.service';
 import { TaskRepository } from './task.repository';
-import type { TaskAction, TaskDismissReason, TaskStatus, TaskType } from './task.types';
+import type {
+  TaskAction,
+  TaskDismissReason,
+  TaskStatus,
+  TaskType,
+} from './task.types';
 
-function assertValidTransitionOrBadRequest(from: TaskStatus, to: TaskStatus): void {
+function assertValidTransitionOrBadRequest(
+  from: TaskStatus,
+  to: TaskStatus,
+): void {
   try {
     assertValidTransition(from, to);
   } catch (err) {
-    if (err instanceof InvalidTaskTransitionError) throw new BadRequestException(err.message);
+    if (err instanceof InvalidTaskTransitionError)
+      throw new BadRequestException(err.message);
     throw err;
   }
 }
@@ -33,7 +45,11 @@ function assertValidTransitionOrBadRequest(from: TaskStatus, to: TaskStatus): vo
 // endpoint below. 'executed' requires confirming a value (see /execute);
 // 'verified'/'verify_failed' are decided by the verification job, not typed
 // in by a human.
-const SYSTEM_ONLY_STATUSES: TaskStatus[] = ['executed', 'verified', 'verify_failed'];
+const SYSTEM_ONLY_STATUSES: TaskStatus[] = [
+  'executed',
+  'verified',
+  'verify_failed',
+];
 
 @Controller('ppc/tasks')
 @UseGuards(JwtAuthGuard)
@@ -97,7 +113,9 @@ export class TasksController {
   @Post('bulk-approve')
   async bulkApprove(@Body('ids') ids: string[]): Promise<BulkApproveResponse> {
     if (!Array.isArray(ids) || ids.length === 0) {
-      throw new BadRequestException('ids must be a non-empty array of task ids');
+      throw new BadRequestException(
+        'ids must be a non-empty array of task ids',
+      );
     }
 
     const results: BulkApproveResult[] = [];
@@ -114,7 +132,10 @@ export class TasksController {
           id,
           ok: false,
           status: task.status,
-          error: err instanceof InvalidTaskTransitionError ? err.message : String(err),
+          error:
+            err instanceof InvalidTaskTransitionError
+              ? err.message
+              : String(err),
         });
         continue;
       }
@@ -158,7 +179,8 @@ export class TasksController {
   // ─── Part 4 — clickable evidence ────────────────────────────────────────
   @Get(':id/facts')
   async facts(@Param('id') id: string, @Query('metric') metric: string) {
-    if (!metric) throw new BadRequestException('metric query parameter is required');
+    if (!metric)
+      throw new BadRequestException('metric query parameter is required');
     const result = await this.queue.facts(id, metric);
     if (!result) throw new NotFoundException(`No task ${id}`);
     return result;
@@ -180,19 +202,30 @@ export class TasksController {
   // executor actually confirms, since it may differ from what was proposed.
   // Delegates storage to the execution/verification loop's own path.
   @Post(':id/execute')
-  async execute(@Param('id') id: string, @Body('confirmedValue') confirmedValue?: string | number | null) {
+  async execute(
+    @Param('id') id: string,
+    @Body('confirmedValue') confirmedValue?: string | number | null,
+  ) {
     const task = await this.taskRepo.findById(id);
     if (!task) throw new NotFoundException(`No task ${id}`);
     assertValidTransitionOrBadRequest(task.status, 'executed');
 
     const action = task.action as TaskAction;
-    if (action.field && (confirmedValue === undefined || confirmedValue === null || confirmedValue === '')) {
+    if (
+      action.field &&
+      (confirmedValue === undefined ||
+        confirmedValue === null ||
+        confirmedValue === '')
+    ) {
       throw new BadRequestException(
         `This task proposes a change to '${action.field}' — confirmedValue is required to mark it executed.`,
       );
     }
 
-    await this.taskRepo.confirmExecution(id, action.field ? String(confirmedValue) : null);
+    await this.taskRepo.confirmExecution(
+      id,
+      action.field ? String(confirmedValue) : null,
+    );
     const updated = await this.taskRepo.findById(id);
     if (updated) await this.ledger.recordEngineChange(updated);
     return this.queue.detail(id);
@@ -204,7 +237,8 @@ export class TasksController {
     @Body('reason') reason: TaskDismissReason,
     @Body('note') note?: string,
   ) {
-    if (!reason) throw new BadRequestException('reason is required to dismiss a task');
+    if (!reason)
+      throw new BadRequestException('reason is required to dismiss a task');
     const task = await this.taskRepo.findById(id);
     if (!task) throw new NotFoundException(`No task ${id}`);
     assertValidTransitionOrBadRequest(task.status, 'dismissed');

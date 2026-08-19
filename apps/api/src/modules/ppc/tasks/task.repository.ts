@@ -71,7 +71,10 @@ export class TaskRepository {
         action: input.action,
         evidence: input.evidence,
         instructions: input.instructions,
-        impactMonthlyUsd: input.impactMonthlyUsd !== null ? input.impactMonthlyUsd.toFixed(2) : null,
+        impactMonthlyUsd:
+          input.impactMonthlyUsd !== null
+            ? input.impactMonthlyUsd.toFixed(2)
+            : null,
         impactBasis: input.impactBasis,
         priorityScore: input.priorityScore,
         confidence: input.confidence,
@@ -102,7 +105,10 @@ export class TaskRepository {
       .set({
         evidence: fields.evidence,
         instructions: fields.instructions,
-        impactMonthlyUsd: fields.impactMonthlyUsd !== null ? fields.impactMonthlyUsd.toFixed(2) : null,
+        impactMonthlyUsd:
+          fields.impactMonthlyUsd !== null
+            ? fields.impactMonthlyUsd.toFixed(2)
+            : null,
         impactBasis: fields.impactBasis,
         priorityScore: fields.priorityScore,
         confidence: fields.confidence,
@@ -112,9 +118,16 @@ export class TaskRepository {
       .where(eq(tasks.id, id));
   }
 
-  async findOpenByClientRule(clientId: string, ruleId: string): Promise<TaskRow[]> {
+  async findOpenByClientRule(
+    clientId: string,
+    ruleId: string,
+  ): Promise<TaskRow[]> {
     return this.drizzle.db.query.tasks.findMany({
-      where: and(eq(tasks.clientId, clientId), eq(tasks.ruleId, ruleId), inArray(tasks.status, OPEN_STATUSES)),
+      where: and(
+        eq(tasks.clientId, clientId),
+        eq(tasks.ruleId, ruleId),
+        inArray(tasks.status, OPEN_STATUSES),
+      ),
     });
   }
 
@@ -122,10 +135,18 @@ export class TaskRepository {
     return this.drizzle.db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   }
 
-  async setStatus(id: string, status: TaskStatus, extra: { executedAt?: Date } = {}): Promise<void> {
+  async setStatus(
+    id: string,
+    status: TaskStatus,
+    extra: { executedAt?: Date } = {},
+  ): Promise<void> {
     await this.drizzle.db
       .update(tasks)
-      .set({ status, updatedAt: new Date(), ...(extra.executedAt ? { executedAt: extra.executedAt } : {}) })
+      .set({
+        status,
+        updatedAt: new Date(),
+        ...(extra.executedAt ? { executedAt: extra.executedAt } : {}),
+      })
       .where(eq(tasks.id, id));
   }
 
@@ -135,11 +156,19 @@ export class TaskRepository {
   // generic PATCH). confirmedValue is what the executor actually entered,
   // which may differ from action.newValue; null when the action has nothing
   // to confirm (action.field null — investigate-type tasks).
-  async confirmExecution(id: string, confirmedValue: string | null): Promise<void> {
+  async confirmExecution(
+    id: string,
+    confirmedValue: string | null,
+  ): Promise<void> {
     const now = new Date();
     await this.drizzle.db
       .update(tasks)
-      .set({ status: 'executed', executedAt: now, updatedAt: now, confirmedValue })
+      .set({
+        status: 'executed',
+        executedAt: now,
+        updatedAt: now,
+        confirmedValue,
+      })
       .where(eq(tasks.id, id));
   }
 
@@ -151,11 +180,19 @@ export class TaskRepository {
       .where(eq(tasks.id, id));
   }
 
-  async setVerifyFailed(id: string, reason: TaskVerifyMismatchReason): Promise<void> {
+  async setVerifyFailed(
+    id: string,
+    reason: TaskVerifyMismatchReason,
+  ): Promise<void> {
     const now = new Date();
     await this.drizzle.db
       .update(tasks)
-      .set({ status: 'verify_failed', verifiedAt: now, verifyMismatchReason: reason, updatedAt: now })
+      .set({
+        status: 'verify_failed',
+        verifiedAt: now,
+        verifyMismatchReason: reason,
+        updatedAt: now,
+      })
       .where(eq(tasks.id, id));
   }
 
@@ -167,18 +204,32 @@ export class TaskRepository {
   // "what counts as verifiable" decision next to the rest of the
   // verification logic instead of split across two files.
   async findExecuted(): Promise<TaskRow[]> {
-    return this.drizzle.db.query.tasks.findMany({ where: eq(tasks.status, 'executed') });
+    return this.drizzle.db.query.tasks.findMany({
+      where: eq(tasks.status, 'executed'),
+    });
   }
 
-  async dismiss(id: string, reason: TaskDismissReason, note: string | null): Promise<void> {
+  async dismiss(
+    id: string,
+    reason: TaskDismissReason,
+    note: string | null,
+  ): Promise<void> {
     await this.drizzle.db
       .update(tasks)
-      .set({ status: 'dismissed', dismissReason: reason, dismissNote: note, updatedAt: new Date() })
+      .set({
+        status: 'dismissed',
+        dismissReason: reason,
+        dismissNote: note,
+        updatedAt: new Date(),
+      })
       .where(eq(tasks.id, id));
   }
 
   async expire(id: string): Promise<void> {
-    await this.drizzle.db.update(tasks).set({ status: 'expired', updatedAt: new Date() }).where(eq(tasks.id, id));
+    await this.drizzle.db
+      .update(tasks)
+      .set({ status: 'expired', updatedAt: new Date() })
+      .where(eq(tasks.id, id));
   }
 
   // Hard 45-day ceiling — anything still open past this gets expired
@@ -188,7 +239,9 @@ export class TaskRepository {
     const rows = await this.drizzle.db
       .update(tasks)
       .set({ status: 'expired', updatedAt: new Date() })
-      .where(and(inArray(tasks.status, OPEN_STATUSES), lt(tasks.createdAt, cutoff)))
+      .where(
+        and(inArray(tasks.status, OPEN_STATUSES), lt(tasks.createdAt, cutoff)),
+      )
       .returning({ id: tasks.id });
     return rows.map((r) => r.id);
   }
@@ -201,7 +254,14 @@ export class TaskRepository {
     return this.drizzle.db
       .select()
       .from(tasks)
-      .where(clientId ? and(eq(tasks.clientId, clientId), inArray(tasks.status, OPEN_STATUSES)) : inArray(tasks.status, OPEN_STATUSES))
+      .where(
+        clientId
+          ? and(
+              eq(tasks.clientId, clientId),
+              inArray(tasks.status, OPEN_STATUSES),
+            )
+          : inArray(tasks.status, OPEN_STATUSES),
+      )
       .orderBy(asc(bandTier), desc(tasks.priorityScore));
   }
 
@@ -225,7 +285,11 @@ export class TaskRepository {
     if (filters.assignee) conditions.push(eq(tasks.assignee, filters.assignee));
     // An explicit status filter selects exactly that status; without one the
     // queue shows the open set, matching what the table is for.
-    conditions.push(filters.status ? eq(tasks.status, filters.status) : inArray(tasks.status, OPEN_STATUSES));
+    conditions.push(
+      filters.status
+        ? eq(tasks.status, filters.status)
+        : inArray(tasks.status, OPEN_STATUSES),
+    );
 
     const where = and(...conditions);
     const bandTier = sql<number>`case when ${tasks.band} = 'D' then 0 else 1 end`;
@@ -239,7 +303,10 @@ export class TaskRepository {
         .orderBy(asc(bandTier), desc(tasks.priorityScore))
         .limit(filters.limit)
         .offset(filters.offset),
-      this.drizzle.db.select({ n: sql<string>`count(*)` }).from(tasks).where(where),
+      this.drizzle.db
+        .select({ n: sql<string>`count(*)` })
+        .from(tasks)
+        .where(where),
     ]);
 
     return {
@@ -248,7 +315,9 @@ export class TaskRepository {
     };
   }
 
-  async findByIdWithClient(id: string): Promise<(TaskRow & { clientName: string }) | undefined> {
+  async findByIdWithClient(
+    id: string,
+  ): Promise<(TaskRow & { clientName: string }) | undefined> {
     const [row] = await this.drizzle.db
       .select({ task: tasks, clientName: clients.name })
       .from(tasks)

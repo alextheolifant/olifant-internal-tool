@@ -40,7 +40,9 @@ export class MonitorRepository {
    * is exactly as worth measuring as an intended one.
    */
   async findExecutedTasksWithoutMonitor(): Promise<TaskRow[]> {
-    const monitored = await this.drizzle.db.select({ taskId: taskMonitors.taskId }).from(taskMonitors);
+    const monitored = await this.drizzle.db
+      .select({ taskId: taskMonitors.taskId })
+      .from(taskMonitors);
     const monitoredIds = monitored.map((m) => m.taskId);
     return this.drizzle.db.query.tasks.findMany({
       where: and(
@@ -48,7 +50,9 @@ export class MonitorRepository {
         isNotNull(tasks.executedAt),
         // notInArray on an empty list produces a false predicate in SQL, so
         // the first-ever run (no monitors yet) has to skip the clause.
-        monitoredIds.length > 0 ? notInArray(tasks.id, monitoredIds) : undefined,
+        monitoredIds.length > 0
+          ? notInArray(tasks.id, monitoredIds)
+          : undefined,
       ),
     });
   }
@@ -61,11 +65,15 @@ export class MonitorRepository {
   }
 
   async findByTaskId(taskId: string): Promise<TaskMonitorRow | undefined> {
-    return this.drizzle.db.query.taskMonitors.findFirst({ where: eq(taskMonitors.taskId, taskId) });
+    return this.drizzle.db.query.taskMonitors.findFirst({
+      where: eq(taskMonitors.taskId, taskId),
+    });
   }
 
   async findById(id: string): Promise<TaskMonitorRow | undefined> {
-    return this.drizzle.db.query.taskMonitors.findFirst({ where: eq(taskMonitors.id, id) });
+    return this.drizzle.db.query.taskMonitors.findFirst({
+      where: eq(taskMonitors.id, id),
+    });
   }
 
   async saveCheckpoint(id: string, verdict: MonitorVerdict): Promise<void> {
@@ -84,7 +92,9 @@ export class MonitorRepository {
   }
 
   async getTask(taskId: string): Promise<TaskRow | undefined> {
-    return this.drizzle.db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
+    return this.drizzle.db.query.tasks.findFirst({
+      where: eq(tasks.id, taskId),
+    });
   }
 
   /**
@@ -93,7 +103,12 @@ export class MonitorRepository {
    * explicitly provisional and must not be banked as a verified number.
    */
   async listConcludedForSavings(): Promise<
-    { clientId: string; clientName: string; taskId: string; verdict: MonitorVerdict }[]
+    {
+      clientId: string;
+      clientName: string;
+      taskId: string;
+      verdict: MonitorVerdict;
+    }[]
   > {
     const rows = await this.drizzle.db
       .select({
@@ -113,6 +128,8 @@ export class MonitorRepository {
   }
 
   async listAll(): Promise<TaskMonitorRow[]> {
-    return this.drizzle.db.query.taskMonitors.findMany({ orderBy: desc(taskMonitors.createdAt) });
+    return this.drizzle.db.query.taskMonitors.findMany({
+      orderBy: desc(taskMonitors.createdAt),
+    });
   }
 }

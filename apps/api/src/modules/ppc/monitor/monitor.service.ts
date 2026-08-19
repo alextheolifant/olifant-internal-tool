@@ -2,15 +2,28 @@ import { Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DrizzleService } from '../../../db/drizzle.service';
 import { ppcClientConfigs } from '../../../db/schema';
-import { RULE_THRESHOLD_DEFAULTS, makeThresholdResolver } from '../rules/thresholds';
+import {
+  RULE_THRESHOLD_DEFAULTS,
+  makeThresholdResolver,
+} from '../rules/thresholds';
 import { computeActionFingerprint } from '../tasks/action-fingerprint';
 import { TaskIdRepository } from '../tasks/task-id.repository';
 import { TaskRepository } from '../tasks/task.repository';
-import type { TaskAction, TaskEvidence, TaskType } from '../tasks/task.types';
+import type { TaskAction, TaskEvidence } from '../tasks/task.types';
 import { MonitorFactsRepository } from './monitor-facts.repository';
-import { MonitorRepository, type TaskMonitorRow, type TaskRow } from './monitor.repository';
-import type { MonitorVerdict, ProvisionalInfo, VerdictStage, WindowMetrics } from './monitor.types';
-import { aggregateOverDates, computeNormalizedComparison, datesIn, normalizedPctChange } from './normalization';
+import { MonitorRepository, type TaskMonitorRow } from './monitor.repository';
+import type {
+  MonitorVerdict,
+  ProvisionalInfo,
+  VerdictStage,
+  WindowMetrics,
+} from './monitor.types';
+import {
+  aggregateOverDates,
+  computeNormalizedComparison,
+  datesIn,
+  normalizedPctChange,
+} from './normalization';
 import { buildVerdictBody } from './verdict';
 
 // Monitoring window, straight from the brief: execution date −14d through
@@ -62,7 +75,9 @@ export class MonitorService {
     for (const task of tasks) {
       const action = task.action as TaskAction;
       const campaignId = action.campaignId || task.entityId;
-      const executionDate = (task.executedAt ?? task.createdAt).toISOString().slice(0, 10);
+      const executionDate = (task.executedAt ?? task.createdAt)
+        .toISOString()
+        .slice(0, 10);
 
       const row = await this.monitors.openIfAbsent({
         taskId: task.id,
@@ -73,7 +88,9 @@ export class MonitorService {
       });
       if (row) {
         opened++;
-        this.logger.log(`opened monitor for ${task.id} (${task.entityType} ${task.entityId}, exec ${executionDate})`);
+        this.logger.log(
+          `opened monitor for ${task.id} (${task.entityType} ${task.entityId}, exec ${executionDate})`,
+        );
       }
     }
     return opened;
@@ -103,12 +120,17 @@ export class MonitorService {
       // Which slot (if any) this pass should write.
       let stage: VerdictStage | null = null;
       if (ageDays >= FINAL_DAY) stage = 'verdict_30d';
-      else if (ageDays >= CHECKPOINT_DAY && monitor.checkpoint14d === null) stage = 'checkpoint_14d';
+      else if (ageDays >= CHECKPOINT_DAY && monitor.checkpoint14d === null)
+        stage = 'checkpoint_14d';
 
       // Auto-flags are evaluated on every pass while watching, not only at
       // the two verdict milestones — the whole point is catching a bad
       // change early enough for rollback to still matter.
-      const verdict = await this.computeVerdict(monitor, stage ?? 'checkpoint_14d', asOf);
+      const verdict = await this.computeVerdict(
+        monitor,
+        stage ?? 'checkpoint_14d',
+        asOf,
+      );
       if (!verdict) {
         summary.skippedNoData++;
         continue;
@@ -128,7 +150,9 @@ export class MonitorService {
       }
     }
 
-    this.logger.log(`runDailyPass(${asOf}): ${JSON.stringify(summary)} (${watching.length} watching)`);
+    this.logger.log(
+      `runDailyPass(${asOf}): ${JSON.stringify(summary)} (${watching.length} watching)`,
+    );
     return summary;
   }
 
@@ -137,7 +161,11 @@ export class MonitorService {
    * directly by the controller for inspection. Returns null when there is
    * no post-execution fact data at all to judge by.
    */
-  async computeVerdict(monitor: TaskMonitorRow, stage: VerdictStage, asOf: string): Promise<MonitorVerdict | null> {
+  async computeVerdict(
+    monitor: TaskMonitorRow,
+    stage: VerdictStage,
+    asOf: string,
+  ): Promise<MonitorVerdict | null> {
     const task = await this.monitors.getTask(monitor.taskId);
     if (!task) return null;
 
@@ -153,20 +181,49 @@ export class MonitorService {
     // when only 3 days of data have landed would understate every run-rate
     // by 10x — the verdict would report a change that didn't happen.
     const latestFactDate = await this.facts.getLatestFactDate();
-    const nominalEnd = addDays(monitor.executionDate, stage === 'verdict_30d' ? FINAL_DAY : CHECKPOINT_DAY);
+    const nominalEnd = addDays(
+      monitor.executionDate,
+      stage === 'verdict_30d' ? FINAL_DAY : CHECKPOINT_DAY,
+    );
     const cappedByToday = minDate(nominalEnd, asOf);
-    const postEnd = latestFactDate ? minDate(cappedByToday, latestFactDate) : cappedByToday;
+    const postEnd = latestFactDate
+      ? minDate(cappedByToday, latestFactDate)
+      : cappedByToday;
 
     if (postEnd < postStart) return null; // no elapsed, in-data days since execution
 
     // ── Facts: entity level, campaign level, account level ────────────────
     const [entityPreRows, entityPostRows] = await Promise.all([
-      this.facts.getEntityFacts(clientId, monitor.entityType, monitor.entityId, monitor.campaignId, baselineStart, baselineEnd),
-      this.facts.getEntityFacts(clientId, monitor.entityType, monitor.entityId, monitor.campaignId, postStart, postEnd),
+      this.facts.getEntityFacts(
+        clientId,
+        monitor.entityType,
+        monitor.entityId,
+        monitor.campaignId,
+        baselineStart,
+        baselineEnd,
+      ),
+      this.facts.getEntityFacts(
+        clientId,
+        monitor.entityType,
+        monitor.entityId,
+        monitor.campaignId,
+        postStart,
+        postEnd,
+      ),
     ]);
     const [campaignPreRows, campaignPostRows] = await Promise.all([
-      this.facts.getCampaignFacts(clientId, monitor.campaignId, baselineStart, baselineEnd),
-      this.facts.getCampaignFacts(clientId, monitor.campaignId, postStart, postEnd),
+      this.facts.getCampaignFacts(
+        clientId,
+        monitor.campaignId,
+        baselineStart,
+        baselineEnd,
+      ),
+      this.facts.getCampaignFacts(
+        clientId,
+        monitor.campaignId,
+        postStart,
+        postEnd,
+      ),
     ]);
     const [accountPreRows, accountPostRows] = await Promise.all([
       this.facts.getAccountFacts(clientId, baselineStart, baselineEnd),
@@ -185,28 +242,53 @@ export class MonitorService {
     const accountPre = aggregateOverDates(accountPreRows, preDates);
     const accountPost = aggregateOverDates(accountPostRows, postDates);
 
-    const entityPre: WindowMetrics | null = entityPreRows ? aggregateOverDates(entityPreRows, preDates) : null;
-    const entityPost: WindowMetrics | null = entityPostRows ? aggregateOverDates(entityPostRows, postDates) : null;
+    const entityPre: WindowMetrics | null = entityPreRows
+      ? aggregateOverDates(entityPreRows, preDates)
+      : null;
+    const entityPost: WindowMetrics | null = entityPostRows
+      ? aggregateOverDates(entityPostRows, postDates)
+      : null;
 
     // ── Normalization (difference-in-differences) ─────────────────────────
     const resolve = await this.thresholdResolver(clientId);
     const baselineThresholds = {
-      minBaselineSpend: resolve('monitor_min_baseline_spend', RULE_THRESHOLD_DEFAULTS.monitor_min_baseline_spend),
-      minBaselineDays: resolve('monitor_min_baseline_days', RULE_THRESHOLD_DEFAULTS.monitor_min_baseline_days),
-      maxBaselineCv: resolve('monitor_max_baseline_cv', RULE_THRESHOLD_DEFAULTS.monitor_max_baseline_cv),
+      minBaselineSpend: resolve(
+        'monitor_min_baseline_spend',
+        RULE_THRESHOLD_DEFAULTS.monitor_min_baseline_spend,
+      ),
+      minBaselineDays: resolve(
+        'monitor_min_baseline_days',
+        RULE_THRESHOLD_DEFAULTS.monitor_min_baseline_days,
+      ),
+      maxBaselineCv: resolve(
+        'monitor_max_baseline_cv',
+        RULE_THRESHOLD_DEFAULTS.monitor_max_baseline_cv,
+      ),
     };
     const accountDailySpends = accountPreRows.map((r) => r.spend);
 
     const spendComparison =
       entityPre && entityPost
-        ? computeNormalizedComparison(entityPre, entityPost, accountPre, accountPost, accountDailySpends, baselineThresholds)
+        ? computeNormalizedComparison(
+            entityPre,
+            entityPost,
+            accountPre,
+            accountPost,
+            accountDailySpends,
+            baselineThresholds,
+          )
         : null;
 
-    const acos = normalizedPctChange(campaignPre.acos, campaignPost.acos, accountPre.acos, accountPost.acos);
+    const acos = normalizedPctChange(
+      campaignPre.acos,
+      campaignPost.acos,
+      accountPre.acos,
+      accountPost.acos,
+    );
 
     // ── Verdict body (per task type) ──────────────────────────────────────
     const body = buildVerdictBody({
-      taskType: task.type as TaskType,
+      taskType: task.type,
       actionField: action.field ?? null,
       entityLabel: entityLabelFor(monitor.entityType, action),
       entityPre,
@@ -236,9 +318,20 @@ export class MonitorService {
       window: { baselineStart, baselineEnd, postStart, postEnd },
       entity:
         entityPre && entityPost
-          ? { level: 'entity', entityType: monitor.entityType, entityId: monitor.entityId, pre: entityPre, post: entityPost }
+          ? {
+              level: 'entity',
+              entityType: monitor.entityType,
+              entityId: monitor.entityId,
+              pre: entityPre,
+              post: entityPost,
+            }
           : null,
-      campaign: { level: 'campaign', campaignId: monitor.campaignId, pre: campaignPre, post: campaignPost },
+      campaign: {
+        level: 'campaign',
+        campaignId: monitor.campaignId,
+        pre: campaignPre,
+        post: campaignPost,
+      },
       spendComparison,
       campaignAcos: {
         pre: campaignPre.acos,
@@ -248,7 +341,12 @@ export class MonitorService {
       },
       verifiedSavingsMonthly: body.verifiedSavingsMonthly,
       flags: body.flags,
-      provisional: buildProvisionalInfo(postStart, postEnd, asOf, latestFactDate),
+      provisional: buildProvisionalInfo(
+        postStart,
+        postEnd,
+        asOf,
+        latestFactDate,
+      ),
       summary: body.summary,
       notMeasurable: body.notMeasurable,
     };
@@ -263,7 +361,10 @@ export class MonitorService {
    * fingerprint lookup — a flag that keeps firing on every daily pass
    * updates nothing and creates nothing extra while a review is still open.
    */
-  private async raiseReviewTask(monitor: TaskMonitorRow, verdict: MonitorVerdict): Promise<boolean> {
+  private async raiseReviewTask(
+    monitor: TaskMonitorRow,
+    verdict: MonitorVerdict,
+  ): Promise<boolean> {
     const original = await this.monitors.getTask(monitor.taskId);
     if (!original) return false;
 
@@ -274,7 +375,11 @@ export class MonitorService {
       type: 'investigate',
       oldValue: null,
     });
-    const existing = await this.taskRepo.findOpenByFingerprint(original.clientId, REVIEW_RULE_ID, fingerprint);
+    const existing = await this.taskRepo.findOpenByFingerprint(
+      original.clientId,
+      REVIEW_RULE_ID,
+      fingerprint,
+    );
     if (existing) return false;
 
     const originalAction = original.action as TaskAction;
@@ -345,21 +450,28 @@ export class MonitorService {
       actionFingerprint: fingerprint,
     });
 
-    this.logger.warn(`raised review task ${id} for ${original.id}: ${flagLines.join(' | ')}`);
+    this.logger.warn(
+      `raised review task ${id} for ${original.id}: ${flagLines.join(' | ')}`,
+    );
     return true;
   }
 
-  private async thresholdResolver(clientId: string): Promise<(key: string, systemDefault: number) => number> {
+  private async thresholdResolver(
+    clientId: string,
+  ): Promise<(key: string, systemDefault: number) => number> {
     const config = await this.drizzle.db.query.ppcClientConfigs.findFirst({
       where: eq(ppcClientConfigs.clientId, clientId),
       columns: { thresholdOverrides: true },
     });
-    return makeThresholdResolver((config?.thresholdOverrides as Record<string, number> | null) ?? null);
+    return makeThresholdResolver(
+      (config?.thresholdOverrides as Record<string, number> | null) ?? null,
+    );
   }
 }
 
 function entityLabelFor(entityType: string, action: TaskAction): string {
-  if (entityType === 'campaign') return `Campaign "${action.campaignName ?? action.campaignId}"`;
+  if (entityType === 'campaign')
+    return `Campaign "${action.campaignName ?? action.campaignId}"`;
   if (entityType === 'search_term') return 'Term';
   if (entityType === 'keyword') return 'Keyword';
   if (entityType === 'product_target') return 'Target';
@@ -375,7 +487,10 @@ function buildProvisionalInfo(
   const provisionalFromDate = addDays(asOf, -RESTATEMENT_DAYS);
   // Days of the post window that fall inside the restatement age.
   const firstProvisional = maxDate(postStart, provisionalFromDate);
-  const provisionalDays = postEnd >= firstProvisional ? daysBetween(firstProvisional, postEnd) + 1 : 0;
+  const provisionalDays =
+    postEnd >= firstProvisional
+      ? daysBetween(firstProvisional, postEnd) + 1
+      : 0;
   return {
     hasProvisionalData: provisionalDays > 0,
     provisionalDays,

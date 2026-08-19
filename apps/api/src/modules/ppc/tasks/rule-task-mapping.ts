@@ -17,7 +17,10 @@ export interface RuleTaskContent {
   confidence: TaskConfidence;
 }
 
-type Mapper = (evidence: Record<string, unknown>, entityId: string) => RuleTaskContent;
+type Mapper = (
+  evidence: Record<string, unknown>,
+  entityId: string,
+) => RuleTaskContent;
 
 function str(v: unknown, fallback = 'Unnamed campaign'): string {
   return typeof v === 'string' && v.length > 0 ? v : fallback;
@@ -38,7 +41,10 @@ const MAPPERS: Record<string, Mapper> = {
   D1: (evidence, entityId) => {
     const campaignName = str(evidence.campaignName);
     const currentBudget = num(evidence.currentBudget);
-    const newBudget = currentBudget !== null ? Math.round(currentBudget * (1 + D1_BUDGET_INCREASE_PCT) * 100) / 100 : null;
+    const newBudget =
+      currentBudget !== null
+        ? Math.round(currentBudget * (1 + D1_BUDGET_INCREASE_PCT) * 100) / 100
+        : null;
     const acos = num(evidence.trailing30dAcos);
     const be = num(evidence.be);
 
@@ -48,7 +54,9 @@ const MAPPERS: Record<string, Mapper> = {
     // favorable specifically because trailing ACOS < BE (checked below by
     // the rule itself before this ever fires).
     const impactMonthlyUsd =
-      currentBudget !== null && newBudget !== null ? (newBudget - currentBudget) * 30 : null;
+      currentBudget !== null && newBudget !== null
+        ? (newBudget - currentBudget) * 30
+        : null;
 
     return {
       type: 'budget',
@@ -67,9 +75,10 @@ const MAPPERS: Record<string, Mapper> = {
         // can read the same key the diff engine would produce.
         field: 'budget.budget',
       },
-      rollback: currentBudget !== null
-        ? `Set the daily budget back to $${currentBudget.toFixed(2)}.`
-        : 'Set the daily budget back to its value before this change.',
+      rollback:
+        currentBudget !== null
+          ? `Set the daily budget back to $${currentBudget.toFixed(2)}.`
+          : 'Set the daily budget back to its value before this change.',
       impactMonthlyUsd,
       impactBasis: `current daily budget × ${D1_BUDGET_INCREASE_PCT * 100}% suggested increase × 30 days — additional monthly spend capacity unlocked at the same profitable ACOS`,
       // 30-day trailing window is a large enough sample whenever this
@@ -89,14 +98,18 @@ const MAPPERS: Record<string, Mapper> = {
     // Excess spend vs. what the same sales would have cost at a BE-level
     // ACOS, extrapolated from the 7d trailing window to a month.
     const wastedSpend7d =
-      be !== null && spend !== null && sales !== null ? spend - (sales * be) / 100 : null;
-    const impactMonthlyUsd = wastedSpend7d !== null ? Math.max(0, wastedSpend7d) * (30 / 7) : null;
+      be !== null && spend !== null && sales !== null
+        ? spend - (sales * be) / 100
+        : null;
+    const impactMonthlyUsd =
+      wastedSpend7d !== null ? Math.max(0, wastedSpend7d) * (30 / 7) : null;
 
     // Sample-size-driven confidence: how far past the minimum spend gate
     // this campaign actually is. Right at the gate ($50 default) is a
     // thinner sample than 3x+ that.
     const spendMultiple = spend !== null && minSpend ? spend / minSpend : null;
-    const confidence: TaskConfidence = spendMultiple !== null && spendMultiple >= 3 ? 'high' : 'medium';
+    const confidence: TaskConfidence =
+      spendMultiple !== null && spendMultiple >= 3 ? 'high' : 'medium';
 
     return {
       type: 'investigate',
@@ -110,9 +123,11 @@ const MAPPERS: Record<string, Mapper> = {
         newValue: null,
         field: null, // diagnostic — no field-level change proposed
       },
-      rollback: 'Diagnostic task — no system change is made by executing it. Nothing to roll back.',
+      rollback:
+        'Diagnostic task — no system change is made by executing it. Nothing to roll back.',
       impactMonthlyUsd,
-      impactBasis: 'trailing 7d spend vs. BE-implied spend for the same sales, extrapolated ×30/7',
+      impactBasis:
+        'trailing 7d spend vs. BE-implied spend for the same sales, extrapolated ×30/7',
       confidence,
     };
   },
@@ -126,7 +141,8 @@ const MAPPERS: Record<string, Mapper> = {
     // Projects the campaign's own pre-stoppage average daily sales (over
     // just the qualifying baseline days) forward a month, as the estimated
     // lost revenue while delivery stays stopped.
-    const impactMonthlyUsd = baselineAvgDailySales !== null ? baselineAvgDailySales * 30 : null;
+    const impactMonthlyUsd =
+      baselineAvgDailySales !== null ? baselineAvgDailySales * 30 : null;
 
     // Sample-size-driven confidence: how many of the 7 baseline days
     // actually met the "meaningfully serving" bar (minimum 4 to fire at all).
@@ -149,9 +165,11 @@ const MAPPERS: Record<string, Mapper> = {
         newValue: null,
         field: null, // diagnostic — no field-level change proposed
       },
-      rollback: 'Diagnostic task — no system change is made by executing it. Nothing to roll back.',
+      rollback:
+        'Diagnostic task — no system change is made by executing it. Nothing to roll back.',
       impactMonthlyUsd,
-      impactBasis: 'baseline average daily sales (qualifying days only) × 30 — projects the pre-stoppage run-rate forward',
+      impactBasis:
+        'baseline average daily sales (qualifying days only) × 30 — projects the pre-stoppage run-rate forward',
       confidence,
     };
   },
@@ -164,12 +182,15 @@ const MAPPERS: Record<string, Mapper> = {
     const term = str(evidence.searchTerm, 'unknown term');
     const campaignName = str(evidence.campaignName);
     const campaignId = str(evidence.campaignId, '');
-    const adGroupId = typeof evidence.adGroupId === 'string' ? evidence.adGroupId : null;
+    const adGroupId =
+      typeof evidence.adGroupId === 'string' ? evidence.adGroupId : null;
     const clicks = num(evidence.clicks) ?? 0;
     const cost = num(evidence.cost) ?? 0;
     const expected = num(evidence.expectedClicksPerOrder);
     const monthlyWaste = num(evidence.monthlyWaste);
-    const winners = Array.isArray(evidence.winnersElsewhere) ? evidence.winnersElsewhere : [];
+    const winners = Array.isArray(evidence.winnersElsewhere)
+      ? evidence.winnersElsewhere
+      : [];
 
     // Confidence reflects how far past the bar the term is, and whether the
     // winner cross-check found competing evidence. A term converting
@@ -178,7 +199,11 @@ const MAPPERS: Record<string, Mapper> = {
     // acting, so it caps confidence at medium.
     const ratio = expected !== null && expected > 0 ? clicks / expected : null;
     const confidence: TaskConfidence =
-      winners.length > 0 ? 'medium' : ratio !== null && ratio >= 4 ? 'high' : 'medium';
+      winners.length > 0
+        ? 'medium'
+        : ratio !== null && ratio >= 4
+          ? 'high'
+          : 'medium';
 
     return {
       type: 'negation',

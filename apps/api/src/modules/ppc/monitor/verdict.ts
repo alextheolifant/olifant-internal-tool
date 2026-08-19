@@ -1,6 +1,15 @@
 import type { TaskType } from '../tasks/task.types';
-import type { MonitorFlag, MonitorVerdict, NormalizedComparison, WindowMetrics } from './monitor.types';
-import { buildSpendSummary, conservativeSavingsMonthly, fmtMoney, fmtSignedPct } from './normalization';
+import type {
+  MonitorFlag,
+  NormalizedComparison,
+  WindowMetrics,
+} from './monitor.types';
+import {
+  buildSpendSummary,
+  conservativeSavingsMonthly,
+  fmtMoney,
+  fmtSignedPct,
+} from './normalization';
 
 // ─── Per-task-type verdict logic ────────────────────────────────────────────
 // Different task types measure different things (the brief's table):
@@ -65,7 +74,8 @@ export function buildVerdictBody(i: VerdictInputs): VerdictBody {
     };
   }
 
-  if (SPEND_ELIMINATING.includes(i.taskType)) return spendEliminatingVerdict(i, flags);
+  if (SPEND_ELIMINATING.includes(i.taskType))
+    return spendEliminatingVerdict(i, flags);
   if (i.taskType === 'bid_change') return bidChangeVerdict(i, flags);
   if (i.taskType === 'budget') return budgetVerdict(i, flags);
   if (i.taskType === 'harvest_launch') return harvestVerdict(i, flags);
@@ -81,18 +91,27 @@ export function buildVerdictBody(i: VerdictInputs): VerdictBody {
 // Negation / pause — spend eliminated is the verified saving; the campaign's
 // ACOS delta is the side-effect check that catches spend simply migrating to
 // worse targets inside the same campaign.
-function spendEliminatingVerdict(i: VerdictInputs, flags: MonitorFlag[]): VerdictBody {
+function spendEliminatingVerdict(
+  i: VerdictInputs,
+  flags: MonitorFlag[],
+): VerdictBody {
   if (!i.spendComparison) {
     return {
       verifiedSavingsMonthly: null,
       flags,
       summary: `${i.entityLabel}: no entity-level fact data available, so eliminated spend cannot be measured.`,
-      notMeasurable: 'No fact table covers this entity type — see monitor-facts.repository.ts.',
+      notMeasurable:
+        'No fact table covers this entity type — see monitor-facts.repository.ts.',
     };
   }
   const savings = conservativeSavingsMonthly(i.spendComparison);
   const summary = `${buildSpendSummary(i.entityLabel, i.spendComparison, savings)} ${campaignSideEffect(i)}`;
-  return { verifiedSavingsMonthly: savings, flags, summary, notMeasurable: null };
+  return {
+    verifiedSavingsMonthly: savings,
+    flags,
+    summary,
+    notMeasurable: null,
+  };
 }
 
 // Bid change — Δ spend / sales / ACOS against the pre-change baseline. The
@@ -104,7 +123,8 @@ function bidChangeVerdict(i: VerdictInputs, flags: MonitorFlag[]): VerdictBody {
       verifiedSavingsMonthly: null,
       flags,
       summary: `${i.entityLabel}: no entity-level fact data available, so the bid change's effect cannot be measured.`,
-      notMeasurable: 'No fact table covers this entity type — see monitor-facts.repository.ts.',
+      notMeasurable:
+        'No fact table covers this entity type — see monitor-facts.repository.ts.',
     };
   }
   const c = i.spendComparison;
@@ -141,7 +161,9 @@ function budgetVerdict(i: VerdictInputs, flags: MonitorFlag[]): VerdictBody {
   const spendDelta = i.campaignPost.dailySpend - i.campaignPre.dailySpend;
   const salesDelta = i.campaignPost.dailySales - i.campaignPre.dailySales;
   const ratio =
-    spendDelta > 0 ? ` Each extra ${fmtMoney(1)} of daily spend returned ${fmtMoney(salesDelta / spendDelta)} in daily sales.` : '';
+    spendDelta > 0
+      ? ` Each extra ${fmtMoney(1)} of daily spend returned ${fmtMoney(salesDelta / spendDelta)} in daily sales.`
+      : '';
 
   return {
     verifiedSavingsMonthly: null,
@@ -164,10 +186,14 @@ function harvestVerdict(i: VerdictInputs, flags: MonitorFlag[]): VerdictBody {
       verifiedSavingsMonthly: null,
       flags,
       summary: `${i.entityLabel}: no entity-level fact data available for the destination target.`,
-      notMeasurable: 'No fact table covers this entity type — see monitor-facts.repository.ts.',
+      notMeasurable:
+        'No fact table covers this entity type — see monitor-facts.repository.ts.',
     };
   }
-  const acos = i.entityPost.acos !== null ? `${i.entityPost.acos.toFixed(1)}% ACOS` : 'no ACOS (no spend or no sales yet)';
+  const acos =
+    i.entityPost.acos !== null
+      ? `${i.entityPost.acos.toFixed(1)}% ACOS`
+      : 'no ACOS (no spend or no sales yet)';
   return {
     verifiedSavingsMonthly: null,
     flags,
@@ -186,7 +212,10 @@ function collectFlags(i: VerdictInputs): MonitorFlag[] {
   // a false alarm. Falls back to raw only when no trend baseline could be
   // established, and says so in the detail text.
   const acosPct = i.campaignAcosNormalizedPct ?? i.campaignAcosRawPct;
-  const acosBasis = i.campaignAcosNormalizedPct !== null ? 'normalized' : 'raw (trend baseline insufficient)';
+  const acosBasis =
+    i.campaignAcosNormalizedPct !== null
+      ? 'normalized'
+      : 'raw (trend baseline insufficient)';
   if (acosPct !== null && acosPct > i.flagThresholds.acosDeteriorationPct) {
     flags.push({
       kind: 'campaign_acos_deterioration',
@@ -197,8 +226,16 @@ function collectFlags(i: VerdictInputs): MonitorFlag[] {
   }
 
   // Impressions collapse on a repriced target.
-  if (i.taskType === 'bid_change' && i.entityPre && i.entityPost && i.entityPre.impressions > 0) {
-    const dropPct = ((i.entityPre.impressions - i.entityPost.impressions) / i.entityPre.impressions) * 100;
+  if (
+    i.taskType === 'bid_change' &&
+    i.entityPre &&
+    i.entityPost &&
+    i.entityPre.impressions > 0
+  ) {
+    const dropPct =
+      ((i.entityPre.impressions - i.entityPost.impressions) /
+        i.entityPre.impressions) *
+      100;
     if (dropPct > i.flagThresholds.impressionDropPct) {
       flags.push({
         kind: 'impressions_collapsed',
@@ -217,7 +254,10 @@ function campaignSideEffect(i: VerdictInputs): string {
   if (pct === null) {
     return `Parent campaign ACOS change could not be computed (no spend or no sales in one of the windows).`;
   }
-  const basis = i.campaignAcosNormalizedPct !== null ? 'net of account trend' : 'raw — trend baseline insufficient';
+  const basis =
+    i.campaignAcosNormalizedPct !== null
+      ? 'net of account trend'
+      : 'raw — trend baseline insufficient';
   const direction = pct >= 0 ? 'worsened' : 'improved';
   return `Parent campaign ACOS ${direction} ${Math.abs(pct).toFixed(0)}% (${basis}).`;
 }

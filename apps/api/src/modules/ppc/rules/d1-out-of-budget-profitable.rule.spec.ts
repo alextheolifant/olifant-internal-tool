@@ -6,8 +6,12 @@ import type { CampaignMetricsRepository } from './campaign-metrics.repository';
 import type { CampaignWithDailyMetrics } from './campaign-window';
 import type { RuleEvalContext } from './types';
 
-function fakeRepo(campaigns: CampaignWithDailyMetrics[]): CampaignMetricsRepository {
-  return { getEnabledCampaignsWithDailyMetrics: async () => campaigns } as unknown as CampaignMetricsRepository;
+function fakeRepo(
+  campaigns: CampaignWithDailyMetrics[],
+): CampaignMetricsRepository {
+  return {
+    getEnabledCampaignsWithDailyMetrics: async () => campaigns,
+  } as unknown as CampaignMetricsRepository;
 }
 
 // D1 doesn't touch the ledger — only D3 does — so an unimplemented stub is
@@ -20,13 +24,23 @@ describe('d1OutOfBudgetProfitableRule', () => {
   const evaluationDate = '2026-08-04';
 
   it('never emits (holdsAtEnter always false) since no budget-capped signal is synced — even for a genuinely profitable campaign', async () => {
-    const daily = [{ date: '2026-07-10', spend: 100, sales: 1000, clicks: 50, impressions: 0 }]; // 10% ACOS, way under a 30% BE
+    const daily = [
+      {
+        date: '2026-07-10',
+        spend: 100,
+        sales: 1000,
+        clicks: 50,
+        impressions: 0,
+      },
+    ]; // 10% ACOS, way under a 30% BE
     const ctx: RuleEvalContext = {
       clientId: 'client-1',
       evaluationDate,
       resolveThreshold: makeThresholdResolver({}),
       be: { value: 30, isFallback: true },
-      campaignMetrics: fakeRepo([{ campaignId: 'c1', campaignName: 'Profitable', dailyMetrics: daily }]),
+      campaignMetrics: fakeRepo([
+        { campaignId: 'c1', campaignName: 'Profitable', dailyMetrics: daily },
+      ]),
       ledger: fakeLedger,
       searchTerms: fakeSearchTerms,
     };
@@ -42,13 +56,17 @@ describe('d1OutOfBudgetProfitableRule', () => {
   });
 
   it('skips campaigns with no sales in the window (nothing to compare)', async () => {
-    const daily = [{ date: '2026-07-10', spend: 100, sales: 0, clicks: 50, impressions: 0 }];
+    const daily = [
+      { date: '2026-07-10', spend: 100, sales: 0, clicks: 50, impressions: 0 },
+    ];
     const ctx: RuleEvalContext = {
       clientId: 'client-1',
       evaluationDate,
       resolveThreshold: makeThresholdResolver({}),
       be: { value: 30, isFallback: true },
-      campaignMetrics: fakeRepo([{ campaignId: 'c1', campaignName: 'NoSales', dailyMetrics: daily }]),
+      campaignMetrics: fakeRepo([
+        { campaignId: 'c1', campaignName: 'NoSales', dailyMetrics: daily },
+      ]),
       ledger: fakeLedger,
       searchTerms: fakeSearchTerms,
     };

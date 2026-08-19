@@ -64,7 +64,9 @@ export function searchTermEntityId(campaignId: string, term: string): string {
   return `${campaignId}${ENTITY_ID_SEPARATOR}${term}`;
 }
 
-export function parseSearchTermEntityId(entityId: string): { campaignId: string; term: string } | null {
+export function parseSearchTermEntityId(
+  entityId: string,
+): { campaignId: string; term: string } | null {
   const idx = entityId.indexOf(ENTITY_ID_SEPARATOR);
   if (idx === -1) return null;
   return {

@@ -103,12 +103,28 @@ export interface MonitorVerdict {
     postStart: string;
     postEnd: string;
   };
-  entity: { level: 'entity'; entityType: string; entityId: string; pre: WindowMetrics; post: WindowMetrics } | null;
-  campaign: { level: 'campaign'; campaignId: string; pre: WindowMetrics; post: WindowMetrics };
+  entity: {
+    level: 'entity';
+    entityType: string;
+    entityId: string;
+    pre: WindowMetrics;
+    post: WindowMetrics;
+  } | null;
+  campaign: {
+    level: 'campaign';
+    campaignId: string;
+    pre: WindowMetrics;
+    post: WindowMetrics;
+  };
   /** Normalization of entity spend — the basis for verified savings. */
   spendComparison: NormalizedComparison | null;
   /** Normalization of the parent campaign's ACOS — the side-effect check. */
-  campaignAcos: { pre: number | null; post: number | null; deltaPct: number | null; normalizedDeltaPct: number | null };
+  campaignAcos: {
+    pre: number | null;
+    post: number | null;
+    deltaPct: number | null;
+    normalizedDeltaPct: number | null;
+  };
   /**
    * Verified savings in $/month, conservative (see normalization.ts's
    * conservativeCounterfactual). Null for task types where "savings" isn't

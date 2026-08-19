@@ -32,7 +32,12 @@ import type { DailyFactRow } from './normalization';
 //                      to one ad.
 
 /** Entity levels the monitor can actually measure, given the synced tables. */
-export const MEASURABLE_ENTITY_TYPES = ['campaign', 'keyword', 'product_target', 'search_term'] as const;
+export const MEASURABLE_ENTITY_TYPES = [
+  'campaign',
+  'keyword',
+  'product_target',
+  'search_term',
+] as const;
 export type MeasurableEntityType = (typeof MEASURABLE_ENTITY_TYPES)[number];
 
 export function isMeasurableEntityType(t: string): t is MeasurableEntityType {
@@ -59,7 +64,12 @@ export class MonitorFactsRepository {
    * unique within an account, and the monitor must never read another
    * client's row.
    */
-  async getCampaignFacts(clientId: string, campaignId: string, start: string, end: string): Promise<DailyFactRow[]> {
+  async getCampaignFacts(
+    clientId: string,
+    campaignId: string,
+    start: string,
+    end: string,
+  ): Promise<DailyFactRow[]> {
     const rows = await this.drizzle.db
       .select({
         date: campaignMetricsDaily.date,
@@ -71,7 +81,10 @@ export class MonitorFactsRepository {
       })
       .from(campaignMetricsDaily)
       .innerJoin(campaigns, eq(campaigns.id, campaignMetricsDaily.campaignId))
-      .innerJoin(amazonAdsAccounts, eq(amazonAdsAccounts.id, campaigns.amazonAdsAccountId))
+      .innerJoin(
+        amazonAdsAccounts,
+        eq(amazonAdsAccounts.id, campaigns.amazonAdsAccountId),
+      )
       .where(
         and(
           eq(amazonAdsAccounts.clientId, clientId),
@@ -88,7 +101,11 @@ export class MonitorFactsRepository {
    * difference-in-differences normalization measures against. Summed across
    * every campaign in every account the client owns, one row per date.
    */
-  async getAccountFacts(clientId: string, start: string, end: string): Promise<DailyFactRow[]> {
+  async getAccountFacts(
+    clientId: string,
+    start: string,
+    end: string,
+  ): Promise<DailyFactRow[]> {
     const rows = await this.drizzle.db
       .select({
         date: campaignMetricsDaily.date,
@@ -100,7 +117,10 @@ export class MonitorFactsRepository {
       })
       .from(campaignMetricsDaily)
       .innerJoin(campaigns, eq(campaigns.id, campaignMetricsDaily.campaignId))
-      .innerJoin(amazonAdsAccounts, eq(amazonAdsAccounts.id, campaigns.amazonAdsAccountId))
+      .innerJoin(
+        amazonAdsAccounts,
+        eq(amazonAdsAccounts.id, campaigns.amazonAdsAccountId),
+      )
       .where(
         and(
           eq(amazonAdsAccounts.clientId, clientId),

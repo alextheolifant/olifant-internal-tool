@@ -32,7 +32,9 @@ describe('aggregateWindow', () => {
   });
 
   it('returns null ACOS when there are no sales in the window', () => {
-    const rows = [{ date: '2026-08-01', spend: 50, sales: 0, clicks: 10, impressions: 0 }];
+    const rows = [
+      { date: '2026-08-01', spend: 50, sales: 0, clicks: 10, impressions: 0 },
+    ];
     const agg = aggregateWindow(rows, '2026-08-01', '2026-08-01');
     expect(agg.acos).toBeNull();
   });

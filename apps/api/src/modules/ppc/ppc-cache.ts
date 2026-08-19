@@ -7,7 +7,9 @@ const logger = new Logger('PpcCache');
 // so there's no single key to invalidate — clear every cached variant rather
 // than trying to enumerate which ranges a config/product change could affect.
 // Non-fatal: a cache-clear failure must not fail the write it followed.
-export async function invalidatePpcClientsCache(redis: RedisService): Promise<void> {
+export async function invalidatePpcClientsCache(
+  redis: RedisService,
+): Promise<void> {
   try {
     const keys = await redis.client.keys('ppc:clients:*');
     if (keys.length > 0) await redis.client.del(...keys);

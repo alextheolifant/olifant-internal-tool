@@ -88,7 +88,8 @@ export function describeInsufficientExpectation(
   campaign: ExpectationInput | null,
   t: ExpectationThresholds,
 ): string {
-  const fmt = (i: ExpectationInput | null) => (i ? `${i.clicks} clicks / ${i.orders} orders` : 'no data');
+  const fmt = (i: ExpectationInput | null) =>
+    i ? `${i.clicks} clicks / ${i.orders} orders` : 'no data';
   return (
     `expected_clicks_per_order unavailable — ad group (${fmt(adGroup)}) and campaign (${fmt(campaign)}) ` +
     `both below the minimum of ${t.minOrders} orders and ${t.minClicks} clicks`

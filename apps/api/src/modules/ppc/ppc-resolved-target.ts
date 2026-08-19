@@ -10,8 +10,12 @@ export interface ResolvedTarget {
   isFallback: boolean;
 }
 
-export function resolveTarget(productValue: number | null, accountDefault: number | null): ResolvedTarget {
+export function resolveTarget(
+  productValue: number | null,
+  accountDefault: number | null,
+): ResolvedTarget {
   if (productValue !== null) return { value: productValue, isFallback: false };
-  if (accountDefault !== null) return { value: accountDefault, isFallback: true };
+  if (accountDefault !== null)
+    return { value: accountDefault, isFallback: true };
   return { value: null, isFallback: false };
 }

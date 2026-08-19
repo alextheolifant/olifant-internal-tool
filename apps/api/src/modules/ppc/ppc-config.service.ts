@@ -16,7 +16,11 @@ export interface PpcConfigResponse {
   // (Active/Onboarding/Paused/Churned, edited elsewhere). frozen = exceptions
   // only, no optimization tasks generated for this account.
   opsStatus: 'active' | 'frozen';
-  adsAccounts: { profileId: string; accountName: string | null; marketplace: string | null }[];
+  adsAccounts: {
+    profileId: string;
+    accountName: string | null;
+    marketplace: string | null;
+  }[];
   monthlyAdBudget: number | null;
   // Fallback bid-math defaults used when a product has no economics row of
   // its own. marginDefault doubles as the account's default break-even ACOS
@@ -30,13 +34,23 @@ export interface PpcConfigResponse {
   accountTargetMetricValue: number | null;
   brandTerms: string[];
   ownAsins: string[];
-  sbObjectives: { campaignName: string; objective: 'performance' | 'defense' | 'ntb' }[];
-  harvestDestinationCampaigns: { asin: string; campaignName: string; maxTargets: number | null }[];
+  sbObjectives: {
+    campaignName: string;
+    objective: 'performance' | 'defense' | 'ntb';
+  }[];
+  harvestDestinationCampaigns: {
+    asin: string;
+    campaignName: string;
+    maxTargets: number | null;
+  }[];
   thresholdOverrides: Record<string, number>;
   standingDirectives: string | null;
   conservativeMode: boolean;
   products: ProductEconomicsResponse[];
-  completeness: { percent: number; checklist: { key: string; label: string; met: boolean }[] };
+  completeness: {
+    percent: number;
+    checklist: { key: string; label: string; met: boolean }[];
+  };
 }
 
 export interface ProductEconomicsResponse {
@@ -60,7 +74,10 @@ function num(v: string | null): number | null {
   return v === null ? null : parseFloat(v);
 }
 
-type RawProduct = Omit<ProductEconomicsResponse, 'resolvedTargetAcos' | 'resolvedTargetTacos'>;
+type RawProduct = Omit<
+  ProductEconomicsResponse,
+  'resolvedTargetAcos' | 'resolvedTargetTacos'
+>;
 
 function mapProduct(row: typeof productEconomics.$inferSelect): RawProduct {
   return {
@@ -104,7 +121,10 @@ export class PpcConfigService {
     return this.buildResponse(clientId, client, config, products);
   }
 
-  async updateConfig(clientId: string, dto: UpdatePpcConfigDto): Promise<PpcConfigResponse> {
+  async updateConfig(
+    clientId: string,
+    dto: UpdatePpcConfigDto,
+  ): Promise<PpcConfigResponse> {
     const client = await this.drizzle.db.query.clients.findFirst({
       where: eq(clients.id, clientId),
     });
@@ -114,26 +134,37 @@ export class PpcConfigService {
       where: eq(ppcClientConfigs.clientId, clientId),
     });
 
-    const patch: Partial<typeof ppcClientConfigs.$inferInsert> = { updatedAt: new Date() };
+    const patch: Partial<typeof ppcClientConfigs.$inferInsert> = {
+      updatedAt: new Date(),
+    };
     if (dto.opsStatus !== undefined) patch.opsStatus = dto.opsStatus;
     if (dto.monthlyAdBudget !== undefined)
-      patch.monthlyAdBudget = dto.monthlyAdBudget != null ? String(dto.monthlyAdBudget) : null;
+      patch.monthlyAdBudget =
+        dto.monthlyAdBudget != null ? String(dto.monthlyAdBudget) : null;
     if (dto.marginDefault !== undefined)
-      patch.marginDefault = dto.marginDefault != null ? String(dto.marginDefault) : null;
+      patch.marginDefault =
+        dto.marginDefault != null ? String(dto.marginDefault) : null;
     if (dto.targetAcosDefault !== undefined)
-      patch.targetAcosDefault = dto.targetAcosDefault != null ? String(dto.targetAcosDefault) : null;
-    if (dto.accountTargetMetric !== undefined) patch.accountTargetMetric = dto.accountTargetMetric;
+      patch.targetAcosDefault =
+        dto.targetAcosDefault != null ? String(dto.targetAcosDefault) : null;
+    if (dto.accountTargetMetric !== undefined)
+      patch.accountTargetMetric = dto.accountTargetMetric;
     if (dto.accountTargetMetricValue !== undefined)
       patch.accountTargetMetricValue =
-        dto.accountTargetMetricValue != null ? String(dto.accountTargetMetricValue) : null;
+        dto.accountTargetMetricValue != null
+          ? String(dto.accountTargetMetricValue)
+          : null;
     if (dto.brandTerms !== undefined) patch.brandTerms = dto.brandTerms;
     if (dto.ownAsins !== undefined) patch.ownAsins = dto.ownAsins;
     if (dto.sbObjectives !== undefined) patch.sbObjectives = dto.sbObjectives;
     if (dto.harvestDestinationCampaigns !== undefined)
       patch.harvestDestinationCampaigns = dto.harvestDestinationCampaigns;
-    if (dto.thresholdOverrides !== undefined) patch.thresholdOverrides = dto.thresholdOverrides;
-    if (dto.standingDirectives !== undefined) patch.standingDirectives = dto.standingDirectives;
-    if (dto.conservativeMode !== undefined) patch.conservativeMode = dto.conservativeMode;
+    if (dto.thresholdOverrides !== undefined)
+      patch.thresholdOverrides = dto.thresholdOverrides;
+    if (dto.standingDirectives !== undefined)
+      patch.standingDirectives = dto.standingDirectives;
+    if (dto.conservativeMode !== undefined)
+      patch.conservativeMode = dto.conservativeMode;
 
     if (existing) {
       await this.drizzle.db
@@ -141,7 +172,9 @@ export class PpcConfigService {
         .set(patch)
         .where(eq(ppcClientConfigs.clientId, clientId));
     } else {
-      await this.drizzle.db.insert(ppcClientConfigs).values({ clientId, ...patch });
+      await this.drizzle.db
+        .insert(ppcClientConfigs)
+        .values({ clientId, ...patch });
     }
 
     await invalidatePpcClientsCache(this.redis);
@@ -152,8 +185,14 @@ export class PpcConfigService {
   private buildResponse(
     clientId: string,
     client: {
-      amazonAdsAccounts: { profileId: string; accountName: string | null; marketplace: string | null }[];
-      amazonSpAccounts: { catalogItems: { asin: string; status: string | null }[] }[];
+      amazonAdsAccounts: {
+        profileId: string;
+        accountName: string | null;
+        marketplace: string | null;
+      }[];
+      amazonSpAccounts: {
+        catalogItems: { asin: string; status: string | null }[];
+      }[];
     },
     config: typeof ppcClientConfigs.$inferSelect | undefined,
     products: (typeof productEconomics.$inferSelect)[],
@@ -174,11 +213,16 @@ export class PpcConfigService {
         else if (status === 'inactive') inactiveAsins.add(item.asin);
       }
     }
-    const isActiveProduct = (asin: string) => activeAsins.has(asin) || !inactiveAsins.has(asin);
+    const isActiveProduct = (asin: string) =>
+      activeAsins.has(asin) || !inactiveAsins.has(asin);
 
-    const mappedProducts = products.map(mapProduct).filter((p) => isActiveProduct(p.asin));
+    const mappedProducts = products
+      .map(mapProduct)
+      .filter((p) => isActiveProduct(p.asin));
     const targetAcosDefault = config ? num(config.targetAcosDefault) : null;
-    const accountTargetMetricValue = config ? num(config.accountTargetMetricValue) : null;
+    const accountTargetMetricValue = config
+      ? num(config.accountTargetMetricValue)
+      : null;
 
     // Completeness reads each product's OWN target, never the resolved
     // (fallback-inflated) value — a row leaning entirely on the account
@@ -195,14 +239,16 @@ export class PpcConfigService {
       })),
     });
 
-    const resolvedProducts: ProductEconomicsResponse[] = mappedProducts.map((p) => ({
-      ...p,
-      resolvedTargetAcos: resolveTarget(p.targetAcos, targetAcosDefault),
-      // No account-level TACOS default exists in this schema (see
-      // ppc_client_configs comment in schema.ts) — passing null means this
-      // always resolves to the product's own value, isFallback: false.
-      resolvedTargetTacos: resolveTarget(p.targetTacos, null),
-    }));
+    const resolvedProducts: ProductEconomicsResponse[] = mappedProducts.map(
+      (p) => ({
+        ...p,
+        resolvedTargetAcos: resolveTarget(p.targetAcos, targetAcosDefault),
+        // No account-level TACOS default exists in this schema (see
+        // ppc_client_configs comment in schema.ts) — passing null means this
+        // always resolves to the product's own value, isFallback: false.
+        resolvedTargetTacos: resolveTarget(p.targetTacos, null),
+      }),
+    );
 
     return {
       clientId,
@@ -220,12 +266,16 @@ export class PpcConfigService {
       brandTerms: (config?.brandTerms as string[] | undefined) ?? [],
       ownAsins: (config?.ownAsins as string[] | undefined) ?? [],
       sbObjectives:
-        (config?.sbObjectives as PpcConfigResponse['sbObjectives'] | undefined) ?? [],
+        (config?.sbObjectives as
+          | PpcConfigResponse['sbObjectives']
+          | undefined) ?? [],
       harvestDestinationCampaigns:
         (config?.harvestDestinationCampaigns as
           | PpcConfigResponse['harvestDestinationCampaigns']
           | undefined) ?? [],
-      thresholdOverrides: (config?.thresholdOverrides as Record<string, number> | undefined) ?? {},
+      thresholdOverrides:
+        (config?.thresholdOverrides as Record<string, number> | undefined) ??
+        {},
       standingDirectives: config?.standingDirectives ?? null,
       conservativeMode: config?.conservativeMode ?? false,
       products: resolvedProducts,

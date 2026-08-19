@@ -12,12 +12,19 @@ export class LedgerController {
   constructor(private readonly ledger: LedgerService) {}
 
   @Post('detect')
-  detect(@Query('accountId') accountId: string, @Query('fromDate') fromDate: string, @Query('toDate') toDate: string) {
+  detect(
+    @Query('accountId') accountId: string,
+    @Query('fromDate') fromDate: string,
+    @Query('toDate') toDate: string,
+  ) {
     return this.ledger.detectExternalChanges(accountId, fromDate, toDate);
   }
 
   @Get()
   list(@Query('clientId') clientId: string, @Query('limit') limit?: string) {
-    return this.ledger.listForClient(clientId, limit ? Number(limit) : undefined);
+    return this.ledger.listForClient(
+      clientId,
+      limit ? Number(limit) : undefined,
+    );
   }
 }

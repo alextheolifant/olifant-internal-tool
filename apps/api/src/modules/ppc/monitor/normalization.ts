@@ -61,7 +61,10 @@ export function emptyWindow(windowDays: number): WindowMetrics {
  * simply didn't serve still counts as a real zero for that entity, which is
  * correct.
  */
-export function aggregateOverDates(rows: DailyFactRow[], effectiveDates: Set<string>): WindowMetrics {
+export function aggregateOverDates(
+  rows: DailyFactRow[],
+  effectiveDates: Set<string>,
+): WindowMetrics {
   const inWindow = rows.filter((r) => effectiveDates.has(r.date));
   return aggregateWindow(inWindow, effectiveDates.size);
 }
@@ -76,7 +79,10 @@ export function datesIn(rows: DailyFactRow[]): Set<string> {
  * production paths; this stays exported for the unit tests, which construct
  * dense windows where span and support are identical.
  */
-export function aggregateWindow(rows: DailyFactRow[], windowDays: number): WindowMetrics {
+export function aggregateWindow(
+  rows: DailyFactRow[],
+  windowDays: number,
+): WindowMetrics {
   const w = emptyWindow(windowDays);
   for (const r of rows) {
     w.spend += r.spend;
@@ -88,7 +94,12 @@ export function aggregateWindow(rows: DailyFactRow[], windowDays: number): Windo
   w.daysWithData = rows.length;
   w.dailySpend = windowDays > 0 ? w.spend / windowDays : 0;
   w.dailySales = windowDays > 0 ? w.sales / windowDays : 0;
-  w.acos = w.spend > 0 && w.sales > 0 ? (w.spend / w.sales) * 100 : w.spend > 0 ? null : null;
+  w.acos =
+    w.spend > 0 && w.sales > 0
+      ? (w.spend / w.sales) * 100
+      : w.spend > 0
+        ? null
+        : null;
   return w;
 }
 
@@ -112,14 +123,18 @@ export function assessBaseline(
   t: BaselineThresholds,
   accountPost?: WindowMetrics,
 ): InsufficientBaselineReason | null {
-  if (accountPre.daysWithData === 0 || accountPre.spend <= 0) return 'no_baseline_data';
+  if (accountPre.daysWithData === 0 || accountPre.spend <= 0)
+    return 'no_baseline_data';
   if (accountPre.spend < t.minBaselineSpend) return 'baseline_spend_too_low';
-  if (accountPre.daysWithData < t.minBaselineDays) return 'baseline_days_too_sparse';
-  if (coefficientOfVariation(accountDailySpends) > t.maxBaselineCv) return 'baseline_too_volatile';
+  if (accountPre.daysWithData < t.minBaselineDays)
+    return 'baseline_days_too_sparse';
+  if (coefficientOfVariation(accountDailySpends) > t.maxBaselineCv)
+    return 'baseline_too_volatile';
   // A post window the sync hasn't reached yet has zero rows, which would
   // compute as a 100% account-wide collapse and make every counterfactual
   // zero. That's a data gap, not a measurement.
-  if (accountPost && accountPost.daysWithData === 0) return 'no_post_window_data';
+  if (accountPost && accountPost.daysWithData === 0)
+    return 'no_post_window_data';
   return null;
 }
 
@@ -128,7 +143,8 @@ export function coefficientOfVariation(values: number[]): number {
   if (values.length < 2) return 0;
   const mean = values.reduce((s, v) => s + v, 0) / values.length;
   if (mean === 0) return 0;
-  const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length;
+  const variance =
+    values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length;
   return Math.sqrt(variance) / mean;
 }
 
@@ -205,7 +221,9 @@ const DAYS_PER_MONTH = 30;
  * Returns null when there's nothing defensible to claim: no baseline spend,
  * or spend didn't actually fall.
  */
-export function conservativeSavingsMonthly(c: NormalizedComparison): number | null {
+export function conservativeSavingsMonthly(
+  c: NormalizedComparison,
+): number | null {
   if (c.entityPreDaily <= 0) return null;
   const counterfactual =
     c.normalized && c.counterfactualDaily !== null
@@ -228,7 +246,8 @@ export function normalizedPctChange(
   accountPre: number | null,
   accountPost: number | null,
 ): { rawPct: number | null; normalizedPct: number | null } {
-  if (pre === null || post === null || pre === 0) return { rawPct: null, normalizedPct: null };
+  if (pre === null || post === null || pre === 0)
+    return { rawPct: null, normalizedPct: null };
   const rawPct = ((post - pre) / pre) * 100;
 
   if (accountPre === null || accountPost === null || accountPre === 0) {
@@ -237,7 +256,10 @@ export function normalizedPctChange(
   const accountFactor = accountPost / accountPre;
   const counterfactual = pre * accountFactor;
   if (counterfactual === 0) return { rawPct, normalizedPct: null };
-  return { rawPct, normalizedPct: ((post - counterfactual) / counterfactual) * 100 };
+  return {
+    rawPct,
+    normalizedPct: ((post - counterfactual) / counterfactual) * 100,
+  };
 }
 
 export function fmtMoney(v: number): string {
@@ -248,12 +270,18 @@ export function fmtSignedPct(v: number): string {
   return `${v >= 0 ? '+' : '-'}${Math.abs(v).toFixed(0)}%`;
 }
 
-export const INSUFFICIENT_BASELINE_TEXT: Record<InsufficientBaselineReason, string> = {
+export const INSUFFICIENT_BASELINE_TEXT: Record<
+  InsufficientBaselineReason,
+  string
+> = {
   no_baseline_data: 'no account spend recorded in the baseline window',
-  baseline_spend_too_low: 'account baseline spend below the minimum for a stable trend',
+  baseline_spend_too_low:
+    'account baseline spend below the minimum for a stable trend',
   baseline_days_too_sparse: 'too few days with data in the baseline window',
-  baseline_too_volatile: 'account spend too volatile across the baseline window',
-  no_post_window_data: 'no account data synced yet for the post-execution window',
+  baseline_too_volatile:
+    'account spend too volatile across the baseline window',
+  no_post_window_data:
+    'no account data synced yet for the post-execution window',
 };
 
 /**
@@ -290,7 +318,7 @@ export function buildSpendSummary(
   }
   const capped = (c.counterfactualDaily as number) > c.entityPreDaily;
   const note = capped
-    ? ' (counterfactual capped at the entity\'s own pre-change rate — account trend rose, and savings are never claimed on spend that never happened)'
+    ? " (counterfactual capped at the entity's own pre-change rate — account trend rose, and savings are never claimed on spend that never happened)"
     : '';
   return `${head} ${trend} — savings stated net of trend: ${fmtMoney(savingsMonthly)}/mo${note}.`;
 }

@@ -34,7 +34,8 @@ export interface PpcConfigCompleteness {
 }
 
 function isProductConfigured(p: ProductEconomicsCheck): boolean {
-  const hasTarget = p.strategy !== null && (p.targetAcos !== null || p.targetTacos !== null);
+  const hasTarget =
+    p.strategy !== null && (p.targetAcos !== null || p.targetTacos !== null);
   // launch is time-boxed by definition — a launch row with no end date can't
   // auto-flip to growth, so it isn't considered fully configured yet.
   const launchDated = p.strategy !== 'launch' || p.launchUntil !== null;
@@ -45,7 +46,8 @@ export function computePpcConfigCompleteness(
   input: PpcConfigCompletenessInput,
 ): PpcConfigCompleteness {
   const hasProducts = input.products.length > 0;
-  const allProductsConfigured = hasProducts && input.products.every(isProductConfigured);
+  const allProductsConfigured =
+    hasProducts && input.products.every(isProductConfigured);
 
   const checklist: CompletenessChecklistItem[] = [
     {
@@ -56,7 +58,9 @@ export function computePpcConfigCompleteness(
     {
       key: 'accountDefaultTarget',
       label: 'Account default target set (ACOS or TACOS)',
-      met: input.targetAcosDefault !== null || input.accountTargetMetricValue !== null,
+      met:
+        input.targetAcosDefault !== null ||
+        input.accountTargetMetricValue !== null,
     },
     {
       key: 'productEconomics',

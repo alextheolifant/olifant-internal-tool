@@ -35,7 +35,9 @@ export function computePriorityScore(input: {
 }): number {
   const impact = input.impactMonthlyUsd ?? 0;
   const raw =
-    (impact / input.estMinutes) * CONFIDENCE_MULTIPLIER[input.confidence] * input.clientMultiplier;
+    (impact / input.estMinutes) *
+    CONFIDENCE_MULTIPLIER[input.confidence] *
+    input.clientMultiplier;
   return Math.round(raw);
 }
 

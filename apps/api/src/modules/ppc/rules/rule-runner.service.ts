@@ -99,7 +99,11 @@ export class RuleRunnerService {
       `runForDate(${evaluationDate}): ${activeClients.length} clients, candidates=${JSON.stringify(candidatesByRule)}`,
     );
 
-    return { evaluationDate, clientsEvaluated: activeClients.length, candidatesByRule };
+    return {
+      evaluationDate,
+      clientsEvaluated: activeClients.length,
+      candidatesByRule,
+    };
   }
 
   // Active = clients.status = 'active' AND ppc_client_configs.ops_status !=
@@ -107,7 +111,11 @@ export class RuleRunnerService {
   // ppc-config.service.ts). Frozen accounts are "exceptions only, no
   // optimization tasks generated" per that field's own definition.
   private async getActiveClients(): Promise<
-    { clientId: string; marginDefault: number | null; thresholdOverrides: Record<string, number> | null }[]
+    {
+      clientId: string;
+      marginDefault: number | null;
+      thresholdOverrides: Record<string, number> | null;
+    }[]
   > {
     const rows = await this.drizzle.db
       .select({
@@ -125,8 +133,12 @@ export class RuleRunnerService {
       .filter((r) => r.opsStatus !== 'frozen')
       .map((r) => ({
         clientId: r.clientId,
-        marginDefault: r.marginDefault !== null && r.marginDefault !== undefined ? Number(r.marginDefault) : null,
-        thresholdOverrides: (r.thresholdOverrides as Record<string, number> | null) ?? null,
+        marginDefault:
+          r.marginDefault !== null && r.marginDefault !== undefined
+            ? Number(r.marginDefault)
+            : null,
+        thresholdOverrides:
+          (r.thresholdOverrides as Record<string, number> | null) ?? null,
       }));
   }
 }

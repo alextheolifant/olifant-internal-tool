@@ -11,8 +11,16 @@ import {
 } from '../../db/schema';
 import { MetricsService } from '../metrics/metrics.service';
 import { SavingsService } from './monitor/savings.service';
-import { computePpcConfigCompleteness, type ProductEconomicsCheck } from './ppc-completeness';
-import { classifyFreshness, FRESH_HOURS, type ClientFreshness, type FreshnessLevel } from './ppc-freshness';
+import {
+  computePpcConfigCompleteness,
+  type ProductEconomicsCheck,
+} from './ppc-completeness';
+import {
+  classifyFreshness,
+  FRESH_HOURS,
+  type ClientFreshness,
+  type FreshnessLevel,
+} from './ppc-freshness';
 
 export interface PpcGlobalFreshness {
   lastSyncedAt: string | null;
@@ -42,7 +50,11 @@ export interface PpcClientRow {
   // Simplified stand-in for the eventual W8 pacing calculation: month-to-date
   // ad spend vs. monthly_ad_budget from config. Always calendar-month-to-date,
   // independent of whatever date range the caller passed in.
-  pacing: { spendMonthToDate: number; monthlyBudget: number; percent: number } | null;
+  pacing: {
+    spendMonthToDate: number;
+    monthlyBudget: number;
+    percent: number;
+  } | null;
   // Deferred — needs the task layer / SP-API inventory (later phases).
   // Rendered as unavailable, never fabricated as 0.
   openTasks: null;
@@ -77,24 +89,44 @@ export class PpcClientsService {
     private readonly savings: SavingsService,
   ) {}
 
-  async getClients(from: string, to: string, marketplace?: string): Promise<{ clients: PpcClientRow[] }> {
+  async getClients(
+    from: string,
+    to: string,
+    marketplace?: string,
+  ): Promise<{ clients: PpcClientRow[] }> {
     const cacheKey = `ppc:clients:v1:${from}:${to}:${marketplace ?? 'ALL'}`;
     const cached = await this.redis.get(cacheKey);
-    if (cached) return JSON.parse(cached);
+    // Same trust-the-cache assumption as metrics.service.ts's identical
+    // pattern — asserted against this method's own declared return type.
+    if (cached) return JSON.parse(cached) as { clients: PpcClientRow[] };
 
-    const metrics = await this.metricsService.getClientMetrics(from, to, marketplace);
-    const clientIds: string[] = metrics.clients.map((c: { id: string }) => c.id);
+    const metrics = await this.metricsService.getClientMetrics(
+      from,
+      to,
+      marketplace,
+    );
+    const clientIds: string[] = metrics.clients.map(
+      (c: { id: string }) => c.id,
+    );
 
-    const [configByClient, productsByClient, freshnessByClient, spendMtdByClient, savingsSummary] =
-      await Promise.all([
-        this.fetchConfigs(clientIds),
-        this.fetchProducts(clientIds),
-        this.fetchFreshness(clientIds),
-        this.fetchSpendMonthToDate(clientIds, marketplace),
-        this.savings.getSummary(),
-      ]);
+    const [
+      configByClient,
+      productsByClient,
+      freshnessByClient,
+      spendMtdByClient,
+      savingsSummary,
+    ] = await Promise.all([
+      this.fetchConfigs(clientIds),
+      this.fetchProducts(clientIds),
+      this.fetchFreshness(clientIds),
+      this.fetchSpendMonthToDate(clientIds, marketplace),
+      this.savings.getSummary(),
+    ]);
     const savingsByClient = new Map(
-      savingsSummary.byClient.map((s) => [s.clientId, s.verifiedSavingsMonthly]),
+      savingsSummary.byClient.map((s) => [
+        s.clientId,
+        s.verifiedSavingsMonthly,
+      ]),
     );
 
     const rows: PpcClientRow[] = metrics.clients.map(
@@ -112,7 +144,9 @@ export class PpcClientsService {
         const completeness = computePpcConfigCompleteness({
           monthlyAdBudget: config ? num(config.monthlyAdBudget) : null,
           targetAcosDefault: config ? num(config.targetAcosDefault) : null,
-          accountTargetMetricValue: config ? num(config.accountTargetMetricValue) : null,
+          accountTargetMetricValue: config
+            ? num(config.accountTargetMetricValue)
+            : null,
           products,
         });
 
@@ -131,13 +165,17 @@ export class PpcClientsService {
           configCompletePercent: completeness.percent,
           configChecklist: completeness.checklist,
           locked: completeness.percent < 100,
-          freshness: freshnessByClient.get(c.id) ?? { lastSyncedAt: null, level: 'unknown' },
+          freshness: freshnessByClient.get(c.id) ?? {
+            lastSyncedAt: null,
+            level: 'unknown',
+          },
           pacing:
             monthlyBudget !== null
               ? {
                   spendMonthToDate: spendMtd,
                   monthlyBudget,
-                  percent: monthlyBudget > 0 ? (spendMtd / monthlyBudget) * 100 : 0,
+                  percent:
+                    monthlyBudget > 0 ? (spendMtd / monthlyBudget) * 100 : 0,
                 }
               : null,
           openTasks: null,
@@ -166,7 +204,9 @@ export class PpcClientsService {
     return new Map(rows.map((r) => [r.clientId, r]));
   }
 
-  private async fetchProducts(clientIds: string[]): Promise<Map<string, ProductEconomicsCheck[]>> {
+  private async fetchProducts(
+    clientIds: string[],
+  ): Promise<Map<string, ProductEconomicsCheck[]>> {
     if (clientIds.length === 0) return new Map();
     const rows = await this.drizzle.db.query.productEconomics.findMany({
       where: inArray(productEconomics.clientId, clientIds),
@@ -192,15 +232,24 @@ export class PpcClientsService {
   // fetchFreshness below, for consistency between the two freshness surfaces.
   async getGlobalFreshness(): Promise<PpcGlobalFreshness> {
     const [{ lastSyncedAt: rawLastSyncedAt }] = await this.drizzle.db
-      .select({ lastSyncedAt: sql<string | null>`MAX(${syncLogs.completedAt})` })
+      .select({
+        lastSyncedAt: sql<string | null>`MAX(${syncLogs.completedAt})`,
+      })
       .from(syncLogs);
     const lastSyncedAt = rawLastSyncedAt ? new Date(rawLastSyncedAt) : null;
 
-    const failureWindowStart = new Date(Date.now() - FRESH_HOURS * 60 * 60 * 1000);
+    const failureWindowStart = new Date(
+      Date.now() - FRESH_HOURS * 60 * 60 * 1000,
+    );
     const [{ failureCount }] = await this.drizzle.db
       .select({ failureCount: sql<number>`COUNT(*)::int` })
       .from(syncLogs)
-      .where(and(eq(syncLogs.status, 'failed'), gte(syncLogs.startedAt, failureWindowStart)));
+      .where(
+        and(
+          eq(syncLogs.status, 'failed'),
+          gte(syncLogs.startedAt, failureWindowStart),
+        ),
+      );
 
     const { level } = classifyFreshness(lastSyncedAt);
     return {
@@ -212,7 +261,9 @@ export class PpcClientsService {
 
   // Latest successful sync per client, across both the Ads API and SP-API
   // account paths — whichever synced most recently wins.
-  private async fetchFreshness(clientIds: string[]): Promise<Map<string, ClientFreshness>> {
+  private async fetchFreshness(
+    clientIds: string[],
+  ): Promise<Map<string, ClientFreshness>> {
     if (clientIds.length === 0) return new Map();
 
     const adsRows = await this.drizzle.db
@@ -221,7 +272,10 @@ export class PpcClientsService {
         completedAt: syncLogs.completedAt,
       })
       .from(syncLogs)
-      .innerJoin(amazonAdsAccounts, eq(syncLogs.amazonAdsAccountId, amazonAdsAccounts.id))
+      .innerJoin(
+        amazonAdsAccounts,
+        eq(syncLogs.amazonAdsAccountId, amazonAdsAccounts.id),
+      )
       .where(inArray(amazonAdsAccounts.clientId, clientIds));
 
     const spRows = await this.drizzle.db
@@ -230,18 +284,23 @@ export class PpcClientsService {
         completedAt: syncLogs.completedAt,
       })
       .from(syncLogs)
-      .innerJoin(amazonSpAccounts, eq(syncLogs.amazonSpAccountId, amazonSpAccounts.id))
+      .innerJoin(
+        amazonSpAccounts,
+        eq(syncLogs.amazonSpAccountId, amazonSpAccounts.id),
+      )
       .where(inArray(amazonSpAccounts.clientId, clientIds));
 
     const latestByClient = new Map<string, Date>();
     for (const row of [...adsRows, ...spRows]) {
       if (!row.completedAt) continue;
       const current = latestByClient.get(row.clientId);
-      if (!current || row.completedAt > current) latestByClient.set(row.clientId, row.completedAt);
+      if (!current || row.completedAt > current)
+        latestByClient.set(row.clientId, row.completedAt);
     }
 
     const result = new Map<string, ClientFreshness>();
-    for (const id of clientIds) result.set(id, classifyFreshness(latestByClient.get(id) ?? null));
+    for (const id of clientIds)
+      result.set(id, classifyFreshness(latestByClient.get(id) ?? null));
     return result;
   }
 
@@ -258,7 +317,10 @@ export class PpcClientsService {
       marketplace,
     );
     return new Map(
-      metrics.clients.map((c: { id: string; spend: number }) => [c.id, c.spend]),
+      metrics.clients.map((c: { id: string; spend: number }) => [
+        c.id,
+        c.spend,
+      ]),
     );
   }
 }

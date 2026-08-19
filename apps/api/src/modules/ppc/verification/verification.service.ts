@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { EntityDiffService, flattenJSON, valuesMatch } from '../entity-diff/entity-diff.service';
+import {
+  EntityDiffService,
+  flattenJSON,
+  valuesMatch,
+} from '../entity-diff/entity-diff.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { TaskRepository, type TaskRow } from '../tasks/task.repository';
 import type { TaskAction, TaskVerifyMismatchReason } from '../tasks/task.types';
@@ -46,7 +50,10 @@ export class VerificationService {
         continue; // diagnostic task — no field-level change was ever proposed, nothing to verify
       }
 
-      const latest = await this.diff.getLatestSnapshot(task.entityType, task.entityId);
+      const latest = await this.diff.getLatestSnapshot(
+        task.entityType,
+        task.entityId,
+      );
       if (!latest) {
         // Never captured by a snapshot at all — could be brand new (e.g. a
         // harvest_launch's new keyword) whose account just hasn't had its
@@ -62,8 +69,12 @@ export class VerificationService {
         continue;
       }
 
-      const accountLatestDate = await this.diff.getLatestSnapshotDate(latest.accountId, task.entityType);
-      const entityStillExists = accountLatestDate !== null && latest.snapshotDate === accountLatestDate;
+      const accountLatestDate = await this.diff.getLatestSnapshotDate(
+        latest.accountId,
+        task.entityType,
+      );
+      const entityStillExists =
+        accountLatestDate !== null && latest.snapshotDate === accountLatestDate;
 
       if (!entityStillExists) {
         await this.taskRepo.setVerifyFailed(task.id, 'entity_deleted');
@@ -91,7 +102,10 @@ export class VerificationService {
       // Mismatch — distinguish "never actually done" from "done to
       // something else," per the brief: these mean different things to
       // whoever investigates.
-      const reason: TaskVerifyMismatchReason = valuesMatch(action.oldValue, currentValue)
+      const reason: TaskVerifyMismatchReason = valuesMatch(
+        action.oldValue,
+        currentValue,
+      )
         ? 'unchanged'
         : 'different_value';
       await this.taskRepo.setVerifyFailed(task.id, reason);
@@ -99,11 +113,17 @@ export class VerificationService {
       summary.verifyFailed++;
     }
 
-    this.logger.log(`verifyExecutedTasks: ${JSON.stringify(summary)} (${executed.length} executed tasks seen)`);
+    this.logger.log(
+      `verifyExecutedTasks: ${JSON.stringify(summary)} (${executed.length} executed tasks seen)`,
+    );
     return summary;
   }
 
-  private async notifyMismatch(task: TaskRow, reason: TaskVerifyMismatchReason, currentValue: unknown): Promise<void> {
+  private async notifyMismatch(
+    task: TaskRow,
+    reason: TaskVerifyMismatchReason,
+    currentValue: unknown,
+  ): Promise<void> {
     const action = task.action as TaskAction;
     const label =
       reason === 'unchanged'

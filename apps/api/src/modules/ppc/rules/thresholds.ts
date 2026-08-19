@@ -76,12 +76,17 @@ export function makeThresholdResolver(
 ): (key: string, systemDefault: number) => number {
   return (key, systemDefault) => {
     const override = overrides?.[key];
-    return override !== undefined && override !== null ? override : systemDefault;
+    return override !== undefined && override !== null
+      ? override
+      : systemDefault;
   };
 }
 
 // Hysteresis: default clear = enter × 0.85 unless a rule states otherwise.
-export function defaultClearThreshold(enterValue: number, clearMultiplier = 0.85): number {
+export function defaultClearThreshold(
+  enterValue: number,
+  clearMultiplier = 0.85,
+): number {
   return enterValue * clearMultiplier;
 }
 
@@ -89,6 +94,9 @@ export function defaultClearThreshold(enterValue: number, clearMultiplier = 0.85
 // impressions) rather than "high value is bad" (e.g. ACOS) — the clear bar
 // must be a LOOSER (higher) threshold than enter, so dividing instead of
 // multiplying keeps the same "15% buffer" intent in the correct direction.
-export function defaultClearThresholdForLowMetric(enterValue: number, clearMultiplier = 0.85): number {
+export function defaultClearThresholdForLowMetric(
+  enterValue: number,
+  clearMultiplier = 0.85,
+): number {
   return enterValue / clearMultiplier;
 }

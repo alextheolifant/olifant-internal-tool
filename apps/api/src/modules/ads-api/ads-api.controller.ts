@@ -1,4 +1,12 @@
-import { Controller, Get, Logger, Query, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Logger,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdsApiService } from './ads-api.service';
@@ -37,7 +45,9 @@ export class AdsApiController {
 
     if (error) {
       this.logger.error(`callback received an error from Amazon: ${error}`);
-      res.redirect(`${webAppUrl}/dashboard/settings?ads_connected=0&reason=user_declined`);
+      res.redirect(
+        `${webAppUrl}/dashboard/settings?ads_connected=0&reason=user_declined`,
+      );
       return;
     }
 
@@ -45,7 +55,9 @@ export class AdsApiController {
       this.logger.error(
         `callback missing required params: code=${!!code} state=${!!state}`,
       );
-      res.redirect(`${webAppUrl}/dashboard/settings?ads_connected=0&reason=missing_params`);
+      res.redirect(
+        `${webAppUrl}/dashboard/settings?ads_connected=0&reason=missing_params`,
+      );
       return;
     }
 
@@ -57,7 +69,9 @@ export class AdsApiController {
         `callback failed: ${err instanceof Error ? err.message : String(err)}`,
         err instanceof Error ? err.stack : undefined,
       );
-      res.redirect(`${webAppUrl}/dashboard/settings?ads_connected=0&reason=connection_failed`);
+      res.redirect(
+        `${webAppUrl}/dashboard/settings?ads_connected=0&reason=connection_failed`,
+      );
     }
   }
 }

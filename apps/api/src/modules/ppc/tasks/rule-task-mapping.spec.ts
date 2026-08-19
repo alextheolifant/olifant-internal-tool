@@ -26,7 +26,10 @@ describe('mapCandidateToTaskContent', () => {
     });
     expect(content.type).toBe('investigate');
     const expectedWasted7d = 700 - (1000 * 30) / 100; // 400
-    expect(content.impactMonthlyUsd).toBeCloseTo(expectedWasted7d * (30 / 7), 5);
+    expect(content.impactMonthlyUsd).toBeCloseTo(
+      expectedWasted7d * (30 / 7),
+      5,
+    );
     expect(content.action.oldValue).toBeNull(); // no field-level change — diagnostic only
   });
 
@@ -91,6 +94,8 @@ describe('mapCandidateToTaskContent', () => {
   });
 
   it('throws for a rule with no registered mapping', () => {
-    expect(() => mapCandidateToTaskContent('D99', 'c1', {})).toThrow(/No task-content mapping/);
+    expect(() => mapCandidateToTaskContent('D99', 'c1', {})).toThrow(
+      /No task-content mapping/,
+    );
   });
 });

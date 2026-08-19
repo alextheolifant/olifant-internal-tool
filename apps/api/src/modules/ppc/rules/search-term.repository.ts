@@ -95,7 +95,10 @@ export class SearchTermRepository {
         campaigns,
         and(
           eq(campaigns.campaignId, searchTermMetricsDaily.campaignId),
-          eq(campaigns.amazonAdsAccountId, searchTermMetricsDaily.amazonAdsAccountId),
+          eq(
+            campaigns.amazonAdsAccountId,
+            searchTermMetricsDaily.amazonAdsAccountId,
+          ),
         ),
       )
       .where(
@@ -143,7 +146,10 @@ export class SearchTermRepository {
     accountIds: string[],
     windowStart: string,
     windowEnd: string,
-  ): Promise<{ byAdGroup: Map<string, ClicksOrdersPopulation>; byCampaign: Map<string, ClicksOrdersPopulation> }> {
+  ): Promise<{
+    byAdGroup: Map<string, ClicksOrdersPopulation>;
+    byCampaign: Map<string, ClicksOrdersPopulation>;
+  }> {
     const byAdGroup = new Map<string, ClicksOrdersPopulation>();
     const byCampaign = new Map<string, ClicksOrdersPopulation>();
     if (accountIds.length === 0) return { byAdGroup, byCampaign };
@@ -252,7 +258,10 @@ export class SearchTermRepository {
         campaigns,
         and(
           eq(campaigns.campaignId, searchTermMetricsDaily.campaignId),
-          eq(campaigns.amazonAdsAccountId, searchTermMetricsDaily.amazonAdsAccountId),
+          eq(
+            campaigns.amazonAdsAccountId,
+            searchTermMetricsDaily.amazonAdsAccountId,
+          ),
         ),
       )
       .where(
@@ -304,7 +313,12 @@ export class SearchTermRepository {
           ),
         );
 
-      const matchingTargetIds: { targetId: string; text: string; campaignId: string; adGroupId: string | null }[] = [];
+      const matchingTargetIds: {
+        targetId: string;
+        text: string;
+        campaignId: string;
+        adGroupId: string | null;
+      }[] = [];
       for (const r of kwRows) {
         const s = r.state as {
           keywordText?: string;
@@ -313,7 +327,11 @@ export class SearchTermRepository {
           campaignId?: string;
           adGroupId?: string;
         };
-        if (!s?.keywordText || normalizeSearchTerm(s.keywordText) !== normalizedTerm) continue;
+        if (
+          !s?.keywordText ||
+          normalizeSearchTerm(s.keywordText) !== normalizedTerm
+        )
+          continue;
         if ((s.state ?? '').toUpperCase() !== 'ENABLED') continue;
         if ((s.matchType ?? '').toUpperCase() !== 'EXACT') continue;
         if (s.campaignId === excludeCampaignId) continue;
@@ -354,9 +372,13 @@ export class SearchTermRepository {
     return winners;
   }
 
-  private async latestSnapshotDate(accountIds: string[]): Promise<string | null> {
+  private async latestSnapshotDate(
+    accountIds: string[],
+  ): Promise<string | null> {
     const [row] = await this.drizzle.db
-      .select({ d: sql<string | null>`max(${entitySnapshotsDaily.snapshotDate})` })
+      .select({
+        d: sql<string | null>`max(${entitySnapshotsDaily.snapshotDate})`,
+      })
       .from(entitySnapshotsDaily)
       .where(inArray(entitySnapshotsDaily.amazonAdsAccountId, accountIds));
     return row?.d ?? null;
@@ -368,7 +390,10 @@ export class SearchTermRepository {
     windowStart: string,
     windowEnd: string,
   ): Promise<Map<string, { clicks: number; orders: number; sales: number }>> {
-    const out = new Map<string, { clicks: number; orders: number; sales: number }>();
+    const out = new Map<
+      string,
+      { clicks: number; orders: number; sales: number }
+    >();
     if (targetIds.length === 0) return out;
     const rows = await this.drizzle.db
       .select({
@@ -398,7 +423,12 @@ export class SearchTermRepository {
   }
 }
 
-function add(map: Map<string, ClicksOrdersPopulation>, key: string, clicks: number, orders: number): void {
+function add(
+  map: Map<string, ClicksOrdersPopulation>,
+  key: string,
+  clicks: number,
+  orders: number,
+): void {
   const cur = map.get(key);
   if (cur) {
     cur.clicks += clicks;

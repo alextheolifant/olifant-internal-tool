@@ -95,7 +95,11 @@ export interface TaskDetail {
   evidence: {
     metrics: Record<string, unknown>;
     window: { start: string; end: string } | null;
-    provenance: { reportJobId: string | null; syncedAt: string | null; syncType: string | null };
+    provenance: {
+      reportJobId: string | null;
+      syncedAt: string | null;
+      syncType: string | null;
+    };
     fallbacks: Record<string, boolean>;
     /**
      * Which evidence keys the facts endpoint can expand, resolved from

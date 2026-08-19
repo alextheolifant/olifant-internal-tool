@@ -29,7 +29,9 @@ export class SlackNotifierService {
         body: JSON.stringify({ text }),
       });
       if (!res.ok) {
-        this.logger.error(`Slack webhook returned ${res.status}: ${await res.text()}`);
+        this.logger.error(
+          `Slack webhook returned ${res.status}: ${await res.text()}`,
+        );
       }
     } catch (err) {
       this.logger.error(`Slack webhook call failed: ${(err as Error).message}`);

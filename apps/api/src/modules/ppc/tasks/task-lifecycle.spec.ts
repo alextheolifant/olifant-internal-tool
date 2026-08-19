@@ -1,4 +1,9 @@
-import { assertValidTransition, InvalidTaskTransitionError, isTerminal, isValidTransition } from './task-lifecycle';
+import {
+  assertValidTransition,
+  InvalidTaskTransitionError,
+  isTerminal,
+  isValidTransition,
+} from './task-lifecycle';
 
 describe('task status state machine', () => {
   it('allows the full happy path: pending -> approved -> executed -> verified', () => {
@@ -9,7 +14,9 @@ describe('task status state machine', () => {
 
   it('rejects skipping approved: pending straight to executed', () => {
     expect(isValidTransition('pending', 'executed')).toBe(false);
-    expect(() => assertValidTransition('pending', 'executed')).toThrow(InvalidTaskTransitionError);
+    expect(() => assertValidTransition('pending', 'executed')).toThrow(
+      InvalidTaskTransitionError,
+    );
   });
 
   it('allows dismissed/expired/blocked from pending and approved', () => {

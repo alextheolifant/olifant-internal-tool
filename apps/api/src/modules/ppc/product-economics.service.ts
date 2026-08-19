@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { DrizzleService } from '../../db/drizzle.service';
 import { RedisService } from '../../db/redis.service';
@@ -6,13 +10,19 @@ import { clients, ppcClientConfigs, productEconomics } from '../../db/schema';
 import { invalidatePpcClientsCache } from './ppc-cache';
 import type { ProductEconomicsResponse } from './ppc-config.service';
 import { resolveTarget } from './ppc-resolved-target';
-import { CreateProductEconomicsDto, UpdateProductEconomicsDto } from './dto/product-economics.dto';
+import {
+  CreateProductEconomicsDto,
+  UpdateProductEconomicsDto,
+} from './dto/product-economics.dto';
 
 function num(v: string | null): number | null {
   return v === null ? null : parseFloat(v);
 }
 
-function mapRow(row: typeof productEconomics.$inferSelect, targetAcosDefault: number | null): ProductEconomicsResponse {
+function mapRow(
+  row: typeof productEconomics.$inferSelect,
+  targetAcosDefault: number | null,
+): ProductEconomicsResponse {
   const targetAcos = num(row.targetAcos);
   const targetTacos = num(row.targetTacos);
   return {
@@ -45,17 +55,25 @@ export class ProductEconomicsService {
     return config ? num(config.targetAcosDefault) : null;
   }
 
-  async create(clientId: string, dto: CreateProductEconomicsDto): Promise<ProductEconomicsResponse> {
+  async create(
+    clientId: string,
+    dto: CreateProductEconomicsDto,
+  ): Promise<ProductEconomicsResponse> {
     const client = await this.drizzle.db.query.clients.findFirst({
       where: eq(clients.id, clientId),
     });
     if (!client) throw new NotFoundException(`Client ${clientId} not found`);
 
     const existing = await this.drizzle.db.query.productEconomics.findFirst({
-      where: and(eq(productEconomics.clientId, clientId), eq(productEconomics.asin, dto.asin)),
+      where: and(
+        eq(productEconomics.clientId, clientId),
+        eq(productEconomics.asin, dto.asin),
+      ),
     });
     if (existing) {
-      throw new ConflictException(`ASIN ${dto.asin} already has a product economics row for this client`);
+      throw new ConflictException(
+        `ASIN ${dto.asin} already has a product economics row for this client`,
+      );
     }
 
     const [row] = await this.drizzle.db
@@ -75,14 +93,21 @@ export class ProductEconomicsService {
     return mapRow(row, await this.getTargetAcosDefault(clientId));
   }
 
-  async update(id: string, dto: UpdateProductEconomicsDto): Promise<ProductEconomicsResponse> {
-    const patch: Partial<typeof productEconomics.$inferInsert> = { updatedAt: new Date() };
-    if (dto.margin !== undefined) patch.margin = dto.margin != null ? String(dto.margin) : null;
+  async update(
+    id: string,
+    dto: UpdateProductEconomicsDto,
+  ): Promise<ProductEconomicsResponse> {
+    const patch: Partial<typeof productEconomics.$inferInsert> = {
+      updatedAt: new Date(),
+    };
+    if (dto.margin !== undefined)
+      patch.margin = dto.margin != null ? String(dto.margin) : null;
     if (dto.strategy !== undefined) patch.strategy = dto.strategy;
     if (dto.targetAcos !== undefined)
       patch.targetAcos = dto.targetAcos != null ? String(dto.targetAcos) : null;
     if (dto.targetTacos !== undefined)
-      patch.targetTacos = dto.targetTacos != null ? String(dto.targetTacos) : null;
+      patch.targetTacos =
+        dto.targetTacos != null ? String(dto.targetTacos) : null;
     if (dto.launchUntil !== undefined) patch.launchUntil = dto.launchUntil;
 
     const [row] = await this.drizzle.db
@@ -90,7 +115,8 @@ export class ProductEconomicsService {
       .set(patch)
       .where(eq(productEconomics.id, id))
       .returning();
-    if (!row) throw new NotFoundException(`Product economics row ${id} not found`);
+    if (!row)
+      throw new NotFoundException(`Product economics row ${id} not found`);
 
     await invalidatePpcClientsCache(this.redis);
     return mapRow(row, await this.getTargetAcosDefault(row.clientId));
@@ -101,7 +127,8 @@ export class ProductEconomicsService {
       .delete(productEconomics)
       .where(eq(productEconomics.id, id))
       .returning({ id: productEconomics.id });
-    if (result.length === 0) throw new NotFoundException(`Product economics row ${id} not found`);
+    if (result.length === 0)
+      throw new NotFoundException(`Product economics row ${id} not found`);
 
     await invalidatePpcClientsCache(this.redis);
   }

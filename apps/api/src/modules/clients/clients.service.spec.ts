@@ -42,7 +42,9 @@ describe('ClientsService.update', () => {
       redis as unknown as RedisService,
     );
 
-    await expect(service.update('missing', {})).rejects.toThrow(NotFoundException);
+    await expect(service.update('missing', {})).rejects.toThrow(
+      NotFoundException,
+    );
     expect(redis._mocks.keys).not.toHaveBeenCalled();
   });
 
@@ -88,7 +90,9 @@ describe('ClientsService.update', () => {
       redis as unknown as RedisService,
     );
 
-    await expect(service.update('client-1', { status: 'paused' })).resolves.toMatchObject({
+    await expect(
+      service.update('client-1', { status: 'paused' }),
+    ).resolves.toMatchObject({
       id: 'client-1',
     });
   });

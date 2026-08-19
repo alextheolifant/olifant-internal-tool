@@ -8,7 +8,12 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { eq, isNull } from 'drizzle-orm';
-import { adsManagerAccounts, amazonAdsAccounts, organizations, users } from '../db/schema';
+import {
+  adsManagerAccounts,
+  amazonAdsAccounts,
+  organizations,
+  users,
+} from '../db/schema';
 import { encrypt } from '../common/crypto.util';
 
 const ATTRIBUTED_TO_EMAIL = 'admin@olifantdigital.com';
@@ -77,7 +82,9 @@ async function main() {
       .where(isNull(amazonAdsAccounts.adsManagerAccountId))
       .returning({ id: amazonAdsAccounts.id });
 
-    console.log(`Backfilled ads_manager_account_id on ${backfilled.length} existing amazon_ads_accounts row(s).`);
+    console.log(
+      `Backfilled ads_manager_account_id on ${backfilled.length} existing amazon_ads_accounts row(s).`,
+    );
   } finally {
     await client.end();
   }

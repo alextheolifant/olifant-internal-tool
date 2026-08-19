@@ -50,7 +50,11 @@ export interface CopilotDeltaEvent {
 
 export type CopilotStreamEvent = CopilotStepEvent | CopilotDeltaEvent;
 
-function step(id: CopilotStepId, label: string, status: 'running' | 'complete'): CopilotStepEvent {
+function step(
+  id: CopilotStepId,
+  label: string,
+  status: 'running' | 'complete',
+): CopilotStepEvent {
   return { type: 'step', id, label, status };
 }
 
@@ -132,10 +136,7 @@ export class AiService {
     to: string,
   ): Promise<ClientMetricsResult> {
     // Reuses the exact aggregation the /metrics/clients endpoint uses — no separate query path.
-    return (await this.metricsService.getClientMetrics(
-      from,
-      to,
-    )) as ClientMetricsResult;
+    return await this.metricsService.getClientMetrics(from, to);
   }
 
   private formatContext(
