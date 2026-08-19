@@ -24,7 +24,7 @@ export function usePpcQueue(filters: PpcQueueFilters): UsePpcQueueResult {
 
   // Filters are an object literal from the caller, so a stable primitive key
   // is what the effect depends on — otherwise every render refetches.
-  const filterKey = `${filters.clientId ?? ""}|${filters.type ?? ""}|${filters.status ?? ""}|${filters.assignee ?? ""}`;
+  const filterKey = `${filters.clientId ?? ""}|${filters.type ?? ""}|${filters.status ?? ""}|${filters.assignee ?? ""}|${filters.limit ?? ""}|${filters.offset ?? ""}`;
 
   useEffect(() => {
     const controller = new AbortController();

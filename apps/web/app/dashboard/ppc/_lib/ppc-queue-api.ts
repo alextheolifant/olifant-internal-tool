@@ -39,7 +39,15 @@ export interface PpcQueueFilters {
   type?: string;
   status?: string;
   assignee?: string;
+  // Paging. The API defaults to 50 and caps at 200; omitting them keeps
+  // whatever the server considers a page.
+  limit?: number;
+  offset?: number;
 }
+
+// Rows per page. Matches the API's own default, so the first request is
+// identical whether or not the UI supplies it.
+export const QUEUE_PAGE_SIZE = 50;
 
 export interface BulkApproveResult {
   id: string;
@@ -62,6 +70,10 @@ export function queueQueryString(filters: PpcQueueFilters): string {
   if (filters.type) params.set("type", filters.type);
   if (filters.status) params.set("status", filters.status);
   if (filters.assignee) params.set("assignee", filters.assignee);
+  if (filters.limit !== undefined) params.set("limit", String(filters.limit));
+  // offset=0 is meaningful (page one) but also the server default, so it's
+  // only sent when non-zero to keep the first page's URL clean.
+  if (filters.offset) params.set("offset", String(filters.offset));
   const qs = params.toString();
   return qs ? `?${qs}` : "";
 }

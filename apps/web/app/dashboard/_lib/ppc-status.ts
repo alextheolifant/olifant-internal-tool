@@ -27,13 +27,6 @@ export interface PpcSyncStatus {
   hasRecentFailures: boolean; // true when a sync has failed within the last 24h
 }
 
-// TODO: wire to sync_logs / the observability layer's health data once it's
-// queryable. Until then this is a stub so the sidebar footer has something
-// stable to render.
-export function usePpcSyncStatus(): PpcSyncStatus {
-  return { label: "Last synced: —", isStale: false, isAgeStale: false, hasRecentFailures: false };
-}
-
 function formatSyncDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }

@@ -123,6 +123,7 @@ export class QueueService {
       profile: task.profile,
       priorityScore: task.priorityScore,
       estMinutes: estMinutesFor(task.ruleId, task.type as TaskType),
+      requiresReview: task.requiresReview,
       impactMonthlyUsd: task.impactMonthlyUsd !== null ? Number(task.impactMonthlyUsd) : null,
       impactBasis: task.impactBasis,
       instructions: (task.instructions as string[]) ?? [],

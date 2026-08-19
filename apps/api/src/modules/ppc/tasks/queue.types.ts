@@ -70,6 +70,10 @@ export interface TaskDetail {
   profile: string | null;
   priorityScore: number;
   estMinutes: number;
+  // Some rules mark a task as needing human judgement before action. The
+  // drawer surfaces this as a caution pill — it must not stay buried in the
+  // row, which is why it's a first-class field rather than left in evidence.
+  requiresReview: boolean;
   impactMonthlyUsd: number | null;
   impactBasis: string | null;
   instructions: string[];

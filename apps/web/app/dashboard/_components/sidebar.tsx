@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { NAV_ITEMS, type PpcBadgeKey } from "./nav-items";
-import { usePpcBadgeCounts, usePpcSyncStatus } from "../_lib/ppc-status";
+import { usePpcBadgeCounts } from "../_lib/ppc-status";
 
 const ICONS: Record<string, (props: { className?: string }) => React.ReactElement> = {
   "/dashboard": IconGrid,
@@ -34,7 +34,6 @@ export default function Sidebar() {
   const pathname = usePathname();
   const [manualOpen, setManualOpen] = useState(false);
   const badges = usePpcBadgeCounts();
-  const sync = usePpcSyncStatus();
 
   const badgeCount = (key?: PpcBadgeKey) => (key ? badges[key] : undefined);
 
@@ -135,10 +134,6 @@ export default function Sidebar() {
           );
         })}
       </nav>
-
-      <div className="mt-2 border-t border-white/10 px-4 pt-3 text-[11px] text-neutral-500">
-        <span className={sync.isStale ? "text-red-600" : ""}>{sync.label}</span>
-      </div>
     </aside>
   );
 }

@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { tableTokens } from "../../../_lib/theme";
 import { usePpcClientFilter } from "../../_lib/ppc-client-filter-context";
-import { bulkApproveTasks, type BulkApproveResponse } from "../../_lib/ppc-queue-api";
+import { QUEUE_PAGE_SIZE, bulkApproveTasks, type BulkApproveResponse } from "../../_lib/ppc-queue-api";
 import { usePpcQueue } from "../../_lib/ppc-queue";
 import { selectAllOfLockedType, selectedType, toggleSelection } from "../../_lib/queue-selection";
+import { TaskDrawer } from "../drawer/TaskDrawer";
 import { BulkActionBar, BulkResultBanner } from "./BulkActionBar";
 import { QueueFilters, hasActiveFilters, type QueueFilterValues } from "./QueueFilters";
+import { QueuePagination } from "./QueuePagination";
 import { QueueTable } from "./QueueTable";
 
 const EMPTY_FILTERS: QueueFilterValues = { type: "", status: "", assignee: "" };
@@ -18,12 +20,16 @@ export function QueueView() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSubmitting, setSubmitting] = useState(false);
   const [bulkResult, setBulkResult] = useState<BulkApproveResponse | null>(null);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [offset, setOffset] = useState(0);
 
   const { data, isLoading, isRefetching, error, retry } = usePpcQueue({
     clientId,
     type: filters.type || undefined,
     status: filters.status || undefined,
     assignee: filters.assignee || undefined,
+    limit: QUEUE_PAGE_SIZE,
+    offset,
   });
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
@@ -38,10 +44,29 @@ export function QueueView() {
     [rows],
   );
 
+  // The client filter lives in the top bar's shared context, so it never
+  // passes through applyFilters below — changing it has to reset paging on
+  // its own, or switching to a client with fewer tasks strands you on a page
+  // that no longer exists.
+  useEffect(() => {
+    setOffset(0);
+    setSelectedIds(new Set());
+  }, [clientId]);
+
   function applyFilters(next: QueueFilterValues) {
     setFilters(next);
+    // Back to page one: the old offset may be past the end of the new,
+    // smaller result set, which would render an empty page that looks like
+    // "no matches".
+    setOffset(0);
     // A selection is scoped to the rows that produced it; keeping it across a
     // refetch could submit ids no longer visible.
+    setSelectedIds(new Set());
+  }
+
+  function goToOffset(next: number) {
+    setOffset(next);
+    // Same reasoning as a filter change — the selected rows leave the view.
     setSelectedIds(new Set());
   }
 
@@ -94,21 +119,31 @@ export function QueueView() {
       {isLoading ? (
         <QueueSkeleton />
       ) : rows.length === 0 ? (
-        <EmptyState filtersActive={filtersActive} onClear={() => applyFilters(EMPTY_FILTERS)} />
+        <EmptyState
+          filtersActive={filtersActive}
+          // An empty PAGE is not an empty queue. This happens when the result
+          // set shrinks under you (tasks approved or expired elsewhere) and
+          // the current offset falls past the new end — saying "queue is
+          // clear" there would be plainly wrong.
+          pastEnd={(data?.total ?? 0) > 0}
+          onClear={() => applyFilters(EMPTY_FILTERS)}
+          onFirstPage={() => goToOffset(0)}
+        />
       ) : (
         <>
           <QueueTable
             rows={rows}
             selectedIds={selectedIds}
             onToggle={(id) => setSelectedIds((cur) => toggleSelection(rows, cur, id))}
-            // TODO(task-drawer): open the detail drawer here once that slice
-            // ships. Intentionally inert rather than routing somewhere that
-            // doesn't exist yet.
-            onRowClick={() => {}}
+            onRowClick={setOpenTaskId}
           />
-          <p className="mt-2 text-[11.5px] text-neutral-400">
-            Showing {rows.length} of {data?.total ?? rows.length}
-          </p>
+          <QueuePagination
+            total={data?.total ?? rows.length}
+            limit={data?.limit ?? QUEUE_PAGE_SIZE}
+            offset={data?.offset ?? offset}
+            isBusy={isRefetching}
+            onChange={goToOffset}
+          />
         </>
       )}
 
@@ -122,6 +157,14 @@ export function QueueView() {
       {/* Select-all is deliberately not a header checkbox: with the same-type
           rule it would silently pick a type for the user. Exposed only once a
           selection exists and a type is therefore already locked. */}
+      <TaskDrawer
+        taskId={openTaskId}
+        onClose={() => setOpenTaskId(null)}
+        // Refetch the queue after any action so the row behind the drawer
+        // never shows a status the drawer has already moved past.
+        onUpdated={retry}
+      />
+
       {lockedType && (
         <button
           type="button"
@@ -135,7 +178,34 @@ export function QueueView() {
   );
 }
 
-function EmptyState({ filtersActive, onClear }: { filtersActive: boolean; onClear: () => void }) {
+function EmptyState({
+  filtersActive,
+  pastEnd,
+  onClear,
+  onFirstPage,
+}: {
+  filtersActive: boolean;
+  pastEnd: boolean;
+  onClear: () => void;
+  onFirstPage: () => void;
+}) {
+  if (pastEnd) {
+    return (
+      <div className="rounded-xl border border-neutral-200 bg-surface px-6 py-12 text-center">
+        <p className="text-[13.5px] font-semibold text-ink">Nothing on this page</p>
+        <p className="mt-1 text-[12px] text-neutral-500">
+          There are still tasks matching your filters — this page is past the end of them.
+        </p>
+        <button
+          onClick={onFirstPage}
+          className="mt-3.5 rounded-lg border border-neutral-200 bg-surface px-3.5 py-1.5 text-[12px] font-semibold text-ink transition-colors hover:bg-neutral-100"
+        >
+          Back to first page
+        </button>
+      </div>
+    );
+  }
+
   // An empty queue WITH filters means something different from a genuinely
   // empty one, so the two never share a message.
   if (filtersActive) {

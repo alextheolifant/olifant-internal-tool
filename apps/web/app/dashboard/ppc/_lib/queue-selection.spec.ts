@@ -1,4 +1,4 @@
-import type { PpcQueueRow } from "./ppc-queue-api";
+import { queueQueryString, type PpcQueueRow } from "./ppc-queue-api";
 import {
   isApprovableStatus,
   rowSelectability,
@@ -94,5 +94,26 @@ describe("select all", () => {
   it("returns an empty set when nothing is approvable", () => {
     const none = [row("X", "negation", "verified"), row("Y", "budget", "executed")];
     expect(selectAllOfLockedType(none, new Set()).size).toBe(0);
+  });
+});
+
+describe("queueQueryString paging", () => {
+  it("omits offset on page one but always sends the limit", () => {
+    expect(queueQueryString({ limit: 50, offset: 0 })).toBe("?limit=50");
+  });
+
+  it("sends the offset on later pages", () => {
+    expect(queueQueryString({ limit: 50, offset: 100 })).toBe("?limit=50&offset=100");
+  });
+
+  it("combines paging with filters", () => {
+    const qs = queueQueryString({ clientId: "c1", type: "negation", limit: 50, offset: 50 });
+    expect(qs).toContain("clientId=c1");
+    expect(qs).toContain("type=negation");
+    expect(qs).toContain("offset=50");
+  });
+
+  it("treats the 'all' client sentinel as unset", () => {
+    expect(queueQueryString({ clientId: "all", limit: 50, offset: 0 })).toBe("?limit=50");
   });
 });
