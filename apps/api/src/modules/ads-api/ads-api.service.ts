@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { and, eq } from 'drizzle-orm';
 import { DrizzleService } from '../../db/drizzle.service';
@@ -54,7 +59,9 @@ export class AdsApiService {
    * ads_manager_accounts in schema.ts). Revisit if this ever needs to be
    * relaxed to more than one per user.
    */
-  async buildAuthorizationUrl(userId: string): Promise<{ authorizationUrl: string }> {
+  async buildAuthorizationUrl(
+    userId: string,
+  ): Promise<{ authorizationUrl: string }> {
     const user = await this.drizzle.db.query.users.findFirst({
       where: eq(users.id, userId),
     });
@@ -103,7 +110,8 @@ export class AdsApiService {
   async handleCallback(code: string, state: string): Promise<void> {
     const stateKey = `${STATE_KEY_PREFIX}${state}`;
     const stored = await this.redis.get(stateKey);
-    if (!stored) throw new BadRequestException('Invalid or expired OAuth state');
+    if (!stored)
+      throw new BadRequestException('Invalid or expired OAuth state');
     await this.redis.client.del(stateKey); // single-use — no replay
 
     const { userId, organizationId } = JSON.parse(stored) as OAuthState;
@@ -148,7 +156,9 @@ export class AdsApiService {
     const clientSecret = process.env.ADS_CLIENT_SECRET;
     const redirectUri = process.env.ADS_REDIRECT_URI;
     if (!clientId || !clientSecret || !redirectUri) {
-      throw new Error('ADS_CLIENT_ID/ADS_CLIENT_SECRET/ADS_REDIRECT_URI are not set');
+      throw new Error(
+        'ADS_CLIENT_ID/ADS_CLIENT_SECRET/ADS_REDIRECT_URI are not set',
+      );
     }
 
     const res = await fetch(LWA_TOKEN_URL, {

@@ -13,6 +13,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
@@ -38,6 +39,9 @@ export const syncTypeEnum = pgEnum('sync_type', [
   'ads_profiles',
   'anomaly_detection',
   'catalog_items',
+  'ads_search_term',
+  'ads_targeting',
+  'entity_snapshots',
 ]);
 
 export const syncStatusEnum = pgEnum('sync_status', [
@@ -307,10 +311,9 @@ export const adsManagerAccounts = pgTable(
     organizationId: uuid('organization_id')
       .notNull()
       .references(() => organizations.id, { onDelete: 'cascade' }),
-    connectedByUserId: uuid('connected_by_user_id').references(
-      () => users.id,
-      { onDelete: 'set null' },
-    ),
+    connectedByUserId: uuid('connected_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     refreshToken: varchar('refresh_token', { length: 2048 }).notNull(),
     connectedAt: timestamp('connected_at', { withTimezone: true })
       .notNull()
@@ -428,6 +431,13 @@ export const adsReportRequests = pgTable(
     syncLogId: uuid('sync_log_id').references(() => syncLogs.id, {
       onDelete: 'set null',
     }),
+    // Internal report-family key ('campaigns' | 'searchTerm' | 'targeting',
+    // ...) — NOT Amazon's own reportTypeId, so our storage stays stable even
+    // if Amazon renames theirs. Defaults 'campaigns' so pre-existing rows
+    // (from before report types were parameterized) stay correctly attributed.
+    reportType: varchar('report_type', { length: 20 })
+      .notNull()
+      .default('campaigns'),
     region: varchar('region', { length: 3 }).notNull(),
     reportId: varchar('report_id', { length: 255 }).notNull(),
     startDate: date('start_date').notNull(),
@@ -445,7 +455,109 @@ export const adsReportRequests = pgTable(
     index('idx_report_req_status').on(t.status),
     index('idx_report_req_account').on(t.amazonAdsAccountId),
     // Partial unique index (WHERE status IN ('PENDING','PROCESSING')) is added
-    // manually in the migration — Drizzle doesn't support partial index WHERE clauses.
+    // manually in the migration — Drizzle doesn't support partial index WHERE
+    // clauses. It's keyed on (account, report_type, start_date, end_date) so
+    // an in-flight campaigns report never blocks submitting a search-term
+    // report for the same account/date range.
+  ],
+);
+
+// Search terms are high-cardinality (one row per term/keyword/campaign/ad
+// group/date) — no FK to campaigns.id, campaign_id/ad_group_id are stored as
+// raw Amazon ids, matching how ads_report_requests itself stores them.
+export const searchTermMetricsDaily = pgTable(
+  'search_term_metrics_daily',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    amazonAdsAccountId: uuid('amazon_ads_account_id')
+      .notNull()
+      .references(() => amazonAdsAccounts.id, { onDelete: 'cascade' }),
+    date: date('date').notNull(),
+    searchTerm: text('search_term').notNull(),
+    keywordId: varchar('keyword_id', { length: 64 }),
+    campaignId: varchar('campaign_id', { length: 64 }).notNull(),
+    adGroupId: varchar('ad_group_id', { length: 64 }).notNull(),
+    matchType: varchar('match_type', { length: 32 }),
+    impressions: integer('impressions').notNull().default(0),
+    clicks: integer('clicks').notNull().default(0),
+    cost: numeric('cost', { precision: 12, scale: 4 }).notNull().default('0'),
+    sales7d: numeric('sales_7d', { precision: 12, scale: 4 })
+      .notNull()
+      .default('0'),
+    sales14d: numeric('sales_14d', { precision: 12, scale: 4 })
+      .notNull()
+      .default('0'),
+    orders7d: integer('orders_7d').notNull().default(0),
+    orders14d: integer('orders_14d').notNull().default(0),
+    units7d: integer('units_7d').notNull().default(0),
+    units14d: integer('units_14d').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    // NULLs in a unique index are never considered equal to each other in
+    // Postgres, so rows with no keyword_id (auto/product-targeting search
+    // terms) are not deduped against each other by this constraint alone —
+    // the upsert additionally coalesces keyword_id to '' before the ON
+    // CONFLICT match so those rows still overwrite correctly.
+    uniqueIndex('uq_search_term_metrics').on(
+      t.amazonAdsAccountId,
+      t.date,
+      t.searchTerm,
+      t.keywordId,
+      t.campaignId,
+      t.adGroupId,
+    ),
+    index('idx_search_term_metrics_date').on(t.date),
+    index('idx_search_term_metrics_account').on(t.amazonAdsAccountId),
+  ],
+);
+
+export const targetMetricsDaily = pgTable(
+  'target_metrics_daily',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    amazonAdsAccountId: uuid('amazon_ads_account_id')
+      .notNull()
+      .references(() => amazonAdsAccounts.id, { onDelete: 'cascade' }),
+    date: date('date').notNull(),
+    targetId: varchar('target_id', { length: 64 }).notNull(),
+    expression: text('expression').notNull(),
+    matchType: varchar('match_type', { length: 32 }),
+    campaignId: varchar('campaign_id', { length: 64 }).notNull(),
+    adGroupId: varchar('ad_group_id', { length: 64 }).notNull(),
+    impressions: integer('impressions').notNull().default(0),
+    clicks: integer('clicks').notNull().default(0),
+    cost: numeric('cost', { precision: 12, scale: 4 }).notNull().default('0'),
+    sales7d: numeric('sales_7d', { precision: 12, scale: 4 })
+      .notNull()
+      .default('0'),
+    sales14d: numeric('sales_14d', { precision: 12, scale: 4 })
+      .notNull()
+      .default('0'),
+    orders7d: integer('orders_7d').notNull().default(0),
+    orders14d: integer('orders_14d').notNull().default(0),
+    units7d: integer('units_7d').notNull().default(0),
+    units14d: integer('units_14d').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('uq_target_metrics').on(
+      t.amazonAdsAccountId,
+      t.date,
+      t.targetId,
+    ),
+    index('idx_target_metrics_date').on(t.date),
+    index('idx_target_metrics_account').on(t.amazonAdsAccountId),
   ],
 );
 
@@ -460,7 +572,9 @@ export const spReportRequests = pgTable(
     // submitted, so Phase 2 polling can mark it success/failed on
     // completion — without this, sync_logs stays 'running' forever
     // regardless of how the report request resolves.
-    syncLogId: uuid('sync_log_id').references(() => syncLogs.id, { onDelete: 'set null' }),
+    syncLogId: uuid('sync_log_id').references(() => syncLogs.id, {
+      onDelete: 'set null',
+    }),
     region: varchar('region', { length: 3 }).notNull(),
     reportId: varchar('report_id', { length: 255 }).notNull(),
     reportDocumentId: varchar('report_document_id', { length: 255 }),
@@ -577,7 +691,10 @@ export const catalogItems = pgTable(
       .defaultNow(),
   },
   (t) => [
-    uniqueIndex('uq_catalog_items_account_asin').on(t.amazonSpAccountId, t.asin),
+    uniqueIndex('uq_catalog_items_account_asin').on(
+      t.amazonSpAccountId,
+      t.asin,
+    ),
     index('idx_catalog_items_account').on(t.amazonSpAccountId),
   ],
 );
@@ -597,7 +714,10 @@ export const anomalies = pgTable(
       .notNull()
       .references(() => clients.id, { onDelete: 'cascade' }),
     metric: anomalyMetricEnum('metric').notNull(),
-    baselineValue: numeric('baseline_value', { precision: 14, scale: 4 }).notNull(),
+    baselineValue: numeric('baseline_value', {
+      precision: 14,
+      scale: 4,
+    }).notNull(),
     actualValue: numeric('actual_value', { precision: 14, scale: 4 }).notNull(),
     // Null when the baseline was 0 — a "new activity" anomaly has no meaningful
     // percentage; never fabricated as a sentinel number.
@@ -737,14 +857,20 @@ export const ppcClientConfigs = pgTable(
     // its own. marginDefault doubles as the account's default break-even
     // ACOS (BE = margin) — displayed as "BE" in the UI, not stored twice.
     marginDefault: numeric('margin_default', { precision: 5, scale: 2 }),
-    targetAcosDefault: numeric('target_acos_default', { precision: 5, scale: 2 }),
+    targetAcosDefault: numeric('target_acos_default', {
+      precision: 5,
+      scale: 2,
+    }),
     // Account-level rollup/reporting target — independent of the bid-math
     // fallback above. Purely a reporting number; bid/rule math (a later
     // phase) always reads the per-product targets, never this.
     accountTargetMetric: ppcAccountTargetMetricEnum('account_target_metric')
       .notNull()
       .default('tacos'),
-    accountTargetMetricValue: numeric('account_target_metric_value', { precision: 5, scale: 2 }),
+    accountTargetMetricValue: numeric('account_target_metric_value', {
+      precision: 5,
+      scale: 2,
+    }),
     brandTerms: jsonb('brand_terms').notNull().default([]),
     ownAsins: jsonb('own_asins').notNull().default([]),
     // Array of { campaignName: string, objective: 'performance' | 'defense' | 'ntb' }.
@@ -759,6 +885,16 @@ export const ppcClientConfigs = pgTable(
     thresholdOverrides: jsonb('threshold_overrides'),
     standingDirectives: text('standing_directives'),
     conservativeMode: boolean('conservative_mode').notNull().default(false),
+    // Manual per-client escalation applied to every task's priority score
+    // (priority.ts's client_multiplier term). Default 1.00 = no escalation.
+    // A client paying for a faster SLA, or one the team wants to prioritize,
+    // gets this bumped above 1.0; it's a blunt multiplier, not a per-rule setting.
+    priorityMultiplier: numeric('priority_multiplier', {
+      precision: 4,
+      scale: 2,
+    })
+      .notNull()
+      .default('1.00'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -822,10 +958,11 @@ export const productEconomicsRelations = relations(
 );
 
 // ─── PPC Engine: rule runner (Today screen exception rules) ────────────────────
-// task_candidates is a raw, undeduplicated feed for the task layer (dedup,
-// scoring, enqueueing) — deliberately not built yet. Re-running evaluation for
-// the same day can produce duplicate rows; that's a known TODO for the task
-// layer, not a bug in the runner.
+// task_candidates is the raw, undeduplicated feed the rule runner writes to.
+// The task layer (tasks/task-promotion.service.ts) consumes rows where
+// promotedAt IS NULL, converts each into a real task (deduping via
+// action_fingerprint), and stamps promotedAt — so promotion is idempotent
+// and doesn't depend on correlating against a specific evaluation date.
 export const taskCandidates = pgTable(
   'task_candidates',
   {
@@ -838,6 +975,7 @@ export const taskCandidates = pgTable(
     entityId: varchar('entity_id', { length: 255 }).notNull(),
     evaluatedAt: timestamp('evaluated_at', { withTimezone: true }).notNull(),
     evidence: jsonb('evidence').notNull(),
+    promotedAt: timestamp('promoted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -900,3 +1038,371 @@ export const ruleConditionStateRelations = relations(
     }),
   }),
 );
+
+// ─── Task layer ──────────────────────────────────────────────────────────────
+
+export const taskTypeEnum = pgEnum('task_type', [
+  'negation',
+  'bid_change',
+  'harvest_launch',
+  'budget',
+  'placement',
+  'pause',
+  'structural',
+  'exception',
+  'investigate',
+  'sqp_opportunity',
+  'rank_defense',
+  'cro_flag',
+  'inventory_guard',
+  'pacing',
+]);
+
+export const taskStatusEnum = pgEnum('task_status', [
+  'pending',
+  'approved',
+  'blocked',
+  'executed',
+  'verified',
+  'verify_failed',
+  'dismissed',
+  'expired',
+]);
+
+// Which of the three distinct mismatch cases produced a verify_failed —
+// see verification.service.ts. Recorded so the person investigating knows
+// whether to look for "never actually done," "someone entered something
+// else," or "entity's gone" without re-deriving it from the diff by hand.
+export const taskVerifyMismatchReasonEnum = pgEnum(
+  'task_verify_mismatch_reason',
+  [
+    'unchanged', // entity's current value still matches the pre-change oldValue
+    'different_value', // entity changed, but not to the confirmed value
+    'entity_deleted', // entity no longer appears in the latest snapshot
+  ],
+);
+
+export const taskConfidenceEnum = pgEnum('task_confidence', [
+  'high',
+  'medium',
+  'provisional',
+]);
+
+// Structured dismissal reasons — feed threshold tuning later, so a fixed
+// vocabulary rather than free text is required (a note field carries anything
+// unstructured on top of the reason).
+export const taskDismissReasonEnum = pgEnum('task_dismiss_reason', [
+  'not_actionable',
+  'already_handled',
+  'incorrect_data',
+  'client_preference',
+  'duplicate',
+  'other',
+]);
+
+// One counter per calendar day, incremented atomically to produce the
+// human-readable TSK-YYYY-MM-DD-NNNNN id — see task-id.service.ts.
+export const taskIdCounters = pgTable('task_id_counters', {
+  dateKey: date('date_key').primaryKey(),
+  counter: integer('counter').notNull().default(0),
+});
+
+export const tasks = pgTable(
+  'tasks',
+  {
+    id: varchar('id', { length: 24 }).primaryKey(), // TSK-YYYY-MM-DD-NNNNN
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    profile: varchar('profile', { length: 10 }), // e.g. "US" — marketplace/profile scope, nullable until multi-marketplace tasks exist
+    ruleId: varchar('rule_id', { length: 20 }).notNull(),
+    // The rule's band (D/W/S/M/I/G) at creation time — stored rather than
+    // re-derived from ruleId via the rule registry on every query, since
+    // sorting (D-band always above every other band, regardless of score)
+    // needs it directly queryable/sortable in SQL.
+    band: varchar('band', { length: 5 }).notNull(),
+    // Duplicated from action.entityType/action.campaignId as first-class
+    // columns — same convention as task_candidates/rule_condition_state —
+    // so expiry-on-clear-condition and other entity-scoped lookups don't
+    // need JSONB path queries.
+    entityType: varchar('entity_type', { length: 50 }).notNull(),
+    entityId: varchar('entity_id', { length: 255 }).notNull(),
+    type: taskTypeEnum('type').notNull(),
+    title: text('title').notNull(),
+    // { entityType, campaignId, campaignName (verbatim), adGroupId, oldValue, newValue }
+    action: jsonb('action').notNull(),
+    // { metrics: {...rule evidence...}, window: {start,end}, provenance: {...}, fallbacks: {...} } — see evidence.ts
+    evidence: jsonb('evidence').notNull(),
+    // Ordered array of console-literal instruction strings — see instruction-templates.ts
+    instructions: jsonb('instructions').notNull(),
+    impactMonthlyUsd: numeric('impact_monthly_usd', {
+      precision: 12,
+      scale: 2,
+    }),
+    impactBasis: text('impact_basis'),
+    priorityScore: integer('priority_score').notNull(),
+    confidence: taskConfidenceEnum('confidence').notNull(),
+    status: taskStatusEnum('status').notNull().default('pending'),
+    blockedBy: varchar('blocked_by', { length: 24 }).references(
+      (): AnyPgColumn => tasks.id,
+    ),
+    requiresReview: boolean('requires_review').notNull().default(false),
+    standingDirectivesAck: boolean('standing_directives_ack')
+      .notNull()
+      .default(false),
+    assignee: varchar('assignee', { length: 255 }),
+    rollback: text('rollback').notNull(),
+    dismissReason: taskDismissReasonEnum('dismiss_reason'),
+    dismissNote: text('dismiss_note'),
+    // Dedup key component — see action-fingerprint.ts for the exact definition.
+    actionFingerprint: varchar('action_fingerprint', { length: 64 }).notNull(),
+    // What the executor actually confirmed at execution time — may differ
+    // from action.newValue (the proposed value). Null for actions with
+    // nothing to confirm (investigate-type tasks, action.newValue null).
+    // What verification compares against, not action.newValue directly.
+    confirmedValue: text('confirmed_value'),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    verifyMismatchReason: taskVerifyMismatchReasonEnum(
+      'verify_mismatch_reason',
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    executedAt: timestamp('executed_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('idx_tasks_client_status').on(t.clientId, t.status),
+    // Dedup lookup: does an open task already exist for this
+    // (client, rule, action_fingerprint)?
+    index('idx_tasks_dedup').on(t.clientId, t.ruleId, t.actionFingerprint),
+    // Expiry-on-clear lookup: for each open task, what's the current
+    // rule_condition_state for its entity?
+    index('idx_tasks_entity').on(
+      t.clientId,
+      t.ruleId,
+      t.entityType,
+      t.entityId,
+    ),
+  ],
+);
+
+export const tasksRelations = relations(tasks, ({ one }) => ({
+  client: one(clients, {
+    fields: [tasks.clientId],
+    references: [clients.id],
+  }),
+  blockedByTask: one(tasks, {
+    fields: [tasks.blockedBy],
+    references: [tasks.id],
+  }),
+}));
+
+// ─── Entity snapshots: versioned daily history ─────────────────────────────
+// Append-only daily rows, not row versioning — one row per (account, date,
+// entity). The existing current-state tables (campaigns, etc.) are untouched
+// and keep serving live queries; this is additive history alongside them,
+// built specifically so diffEntityState (services/sync-ads-api/internal/sync/
+// diff.go) has two dated states of the same entity to compare. entity_id
+// (and parent_id) are Amazon's own raw ids — not FK'd to campaigns.id —
+// same convention as search_term_metrics_daily/target_metrics_daily, since
+// several entity types here (keywords, negatives, product ads) have no
+// current-state table of their own to FK to yet.
+export const entitySnapshotTypeEnum = pgEnum('entity_snapshot_type', [
+  'campaign',
+  'ad_group',
+  'keyword',
+  'product_target',
+  'negative',
+  'product_ad',
+  'portfolio',
+]);
+
+export const entitySnapshotsDaily = pgTable(
+  'entity_snapshots_daily',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    amazonAdsAccountId: uuid('amazon_ads_account_id')
+      .notNull()
+      .references(() => amazonAdsAccounts.id, { onDelete: 'cascade' }),
+    snapshotDate: date('snapshot_date').notNull(),
+    entityType: entitySnapshotTypeEnum('entity_type').notNull(),
+    entityId: varchar('entity_id', { length: 255 }).notNull(),
+    // ad_group_id for keyword/product_target/negative/product_ad rows,
+    // campaign_id for ad_group/negative(campaign-level) rows, null for
+    // campaign/portfolio rows (nothing above them).
+    parentId: varchar('parent_id', { length: 255 }),
+    // The full field set captured for this entity type on this date — see
+    // each entity's amazon.SP*/writer.SnapshotUpsert Go type for the exact
+    // shape. Deliberately untyped here (jsonb, not a fixed column set): the
+    // 7 entity types have different fields, and the diff engine reads
+    // whatever keys are present rather than assuming a shared shape.
+    state: jsonb('state').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('uq_entity_snapshot_daily').on(
+      t.amazonAdsAccountId,
+      t.snapshotDate,
+      t.entityType,
+      t.entityId,
+    ),
+    // "Give me this entity's history" — newest first.
+    index('idx_entity_snapshot_history').on(
+      t.amazonAdsAccountId,
+      t.entityType,
+      t.entityId,
+      t.snapshotDate,
+    ),
+  ],
+);
+
+export const entitySnapshotsDailyRelations = relations(
+  entitySnapshotsDaily,
+  ({ one }) => ({
+    account: one(amazonAdsAccounts, {
+      fields: [entitySnapshotsDaily.amazonAdsAccountId],
+      references: [amazonAdsAccounts.id],
+    }),
+  }),
+);
+
+// ─── Ledger: append-only change history ────────────────────────────────────
+// Two sources write here — see ledger.service.ts:
+//   'engine'   — a task reaching executed/verified, the change the engine
+//                itself made (or a human made via the task queue).
+//   'external' — a diff-engine-detected change with no matching task; the
+//                diff engine's own comparison a human or Amazon made
+//                directly in the console/API, outside the task queue.
+// Never updated or deleted after insert — a correction is a new row, not an
+// edit to an old one. Retained indefinitely (this IS the audit trail).
+export const ledgerSourceEnum = pgEnum('ledger_source', ['engine', 'external']);
+
+// Inferred pattern behind an external change, where the evidence clearly
+// supports it — deliberately conservative (see ledger.service.ts's
+// inferCategory): 'bulk_operation' is the only one actually detected today
+// (same field+value changing across several entities on the same account on
+// the same day). 'amazon_recommendation' has no signal to detect it against
+// in the data this platform captures (no "applied by" field anywhere in the
+// synced entity state) — the value exists in the vocabulary but nothing
+// assigns it yet, rather than guessing. 'manual' is never assigned either,
+// for the same reason: "not bulk" isn't positive evidence of "a human did
+// this by hand," just an absence of the one pattern that IS detectable.
+export const ledgerCategoryEnum = pgEnum('ledger_category', [
+  'bulk_operation',
+  'amazon_recommendation',
+  'manual',
+]);
+
+export const ledgerEntries = pgTable(
+  'ledger_entries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    profile: varchar('profile', { length: 10 }),
+    // The day the change was detected, not the exact console timestamp —
+    // for source='external' this is the diff's toDate (daily-granularity
+    // detection, see ledger.service.ts). For source='engine' this is the
+    // task's executedAt, which IS a real timestamp.
+    timestampDetected: timestamp('timestamp_detected', {
+      withTimezone: true,
+    }).notNull(),
+    entityType: varchar('entity_type', { length: 50 }).notNull(),
+    entityId: varchar('entity_id', { length: 255 }).notNull(),
+    campaignName: varchar('campaign_name', { length: 500 }),
+    field: varchar('field', { length: 100 }).notNull(),
+    oldValue: text('old_value'),
+    newValue: text('new_value'),
+    source: ledgerSourceEnum('source').notNull(),
+    taskId: varchar('task_id', { length: 24 }).references(() => tasks.id, {
+      onDelete: 'set null',
+    }),
+    actor: varchar('actor', { length: 255 }),
+    note: text('note'),
+    // Not in the literal §8.5 column list — added so "Category inference on
+    // external changes" (Part 2) has somewhere real to persist its result.
+    category: ledgerCategoryEnum('category'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('idx_ledger_client_timestamp').on(t.clientId, t.timestampDetected),
+    index('idx_ledger_client_entity').on(t.clientId, t.entityId),
+  ],
+);
+
+export const ledgerEntriesRelations = relations(ledgerEntries, ({ one }) => ({
+  client: one(clients, {
+    fields: [ledgerEntries.clientId],
+    references: [clients.id],
+  }),
+  task: one(tasks, {
+    fields: [ledgerEntries.taskId],
+    references: [tasks.id],
+  }),
+}));
+
+// ─── Monitor: post-change feedback loop ────────────────────────────────────
+// One row per executed task, opening a −14d…+30d window over the EXISTING
+// daily fact tables (campaign_metrics_daily / target_metrics_daily /
+// search_term_metrics_daily). No Amazon API calls — the monitor is a saved
+// query keyed on (entity id, campaign id, execution date), see
+// monitor-facts.repository.ts.
+export const monitorStateEnum = pgEnum('monitor_state', [
+  'watching',
+  'concluded',
+]);
+
+export const taskMonitors = pgTable(
+  'task_monitors',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    taskId: varchar('task_id', { length: 24 })
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    // Duplicated from the task rather than joined on every read — a monitor
+    // must keep measuring the same entity even if the task's own action is
+    // later amended, same first-class-column convention as tasks.entityType.
+    entityType: varchar('entity_type', { length: 50 }).notNull(),
+    entityId: varchar('entity_id', { length: 255 }).notNull(),
+    // Amazon's campaign id (not campaigns.id) — the parent whose side effects
+    // are tracked alongside the entity. Equal to entityId for campaign-level
+    // tasks, which is every task any registered rule currently produces.
+    campaignId: varchar('campaign_id', { length: 255 }).notNull(),
+    executionDate: date('execution_date').notNull(),
+    state: monitorStateEnum('state').notNull().default('watching'),
+    // Full verdict payloads — see monitor.types.ts's MonitorVerdict for the
+    // shape. jsonb rather than columns because a verdict's measured fields
+    // differ per task type (savings for a negation, capped-days for a
+    // budget change, impression collapse for a bid change).
+    checkpoint14d: jsonb('checkpoint_14d'),
+    verdict30d: jsonb('verdict_30d'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    // One monitor per task — openForExecutedTasks relies on this to stay
+    // idempotent across repeated runs.
+    uniqueIndex('uq_task_monitor_task').on(t.taskId),
+    // "Which monitors are still watching" — the daily run's driving query.
+    index('idx_task_monitor_state').on(t.state, t.executionDate),
+  ],
+);
+
+export const taskMonitorsRelations = relations(taskMonitors, ({ one }) => ({
+  task: one(tasks, {
+    fields: [taskMonitors.taskId],
+    references: [tasks.id],
+  }),
+}));

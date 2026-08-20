@@ -2,11 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DrizzleService } from '../../../db/drizzle.service';
 import { clients, ppcClientConfigs, taskCandidates } from '../../../db/schema';
+import { LedgerRepository } from '../ledger/ledger.repository';
 import { resolveAccountBE } from './be-resolution';
 import { CampaignMetricsRepository } from './campaign-metrics.repository';
 import { applyPersistenceAndHysteresis } from './persistence-hysteresis-guard';
 import { REGISTERED_RULES } from './rules.registry';
 import { RuleStateRepository } from './rule-state.repository';
+import { SearchTermRepository } from './search-term.repository';
 import { makeThresholdResolver } from './thresholds';
 import type { RuleEvalContext } from './types';
 
@@ -24,6 +26,8 @@ export class RuleRunnerService {
     private readonly drizzle: DrizzleService,
     private readonly campaignMetrics: CampaignMetricsRepository,
     private readonly ruleState: RuleStateRepository,
+    private readonly ledgerRepo: LedgerRepository,
+    private readonly searchTermRepo: SearchTermRepository,
   ) {}
 
   // Core evaluation loop: iterate active clients -> evaluate each registered
@@ -46,6 +50,8 @@ export class RuleRunnerService {
         resolveThreshold,
         be,
         campaignMetrics: this.campaignMetrics,
+        ledger: this.ledgerRepo,
+        searchTerms: this.searchTermRepo,
       };
 
       for (const rule of REGISTERED_RULES) {
@@ -93,7 +99,11 @@ export class RuleRunnerService {
       `runForDate(${evaluationDate}): ${activeClients.length} clients, candidates=${JSON.stringify(candidatesByRule)}`,
     );
 
-    return { evaluationDate, clientsEvaluated: activeClients.length, candidatesByRule };
+    return {
+      evaluationDate,
+      clientsEvaluated: activeClients.length,
+      candidatesByRule,
+    };
   }
 
   // Active = clients.status = 'active' AND ppc_client_configs.ops_status !=
@@ -101,7 +111,11 @@ export class RuleRunnerService {
   // ppc-config.service.ts). Frozen accounts are "exceptions only, no
   // optimization tasks generated" per that field's own definition.
   private async getActiveClients(): Promise<
-    { clientId: string; marginDefault: number | null; thresholdOverrides: Record<string, number> | null }[]
+    {
+      clientId: string;
+      marginDefault: number | null;
+      thresholdOverrides: Record<string, number> | null;
+    }[]
   > {
     const rows = await this.drizzle.db
       .select({
@@ -119,8 +133,12 @@ export class RuleRunnerService {
       .filter((r) => r.opsStatus !== 'frozen')
       .map((r) => ({
         clientId: r.clientId,
-        marginDefault: r.marginDefault !== null && r.marginDefault !== undefined ? Number(r.marginDefault) : null,
-        thresholdOverrides: (r.thresholdOverrides as Record<string, number> | null) ?? null,
+        marginDefault:
+          r.marginDefault !== null && r.marginDefault !== undefined
+            ? Number(r.marginDefault)
+            : null,
+        thresholdOverrides:
+          (r.thresholdOverrides as Record<string, number> | null) ?? null,
       }));
   }
 }

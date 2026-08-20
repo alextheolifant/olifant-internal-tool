@@ -1,6 +1,10 @@
 import { addDaysISO } from './campaign-window';
 import { defaultClearThresholdForLowMetric } from './thresholds';
-import type { RuleConditionResult, RuleDefinition, RuleEvalContext } from './types';
+import type {
+  RuleConditionResult,
+  RuleDefinition,
+  RuleEvalContext,
+} from './types';
 
 const BASELINE_DAYS = 7;
 // "Previously serving" = majority (>half) of the 7 days before yesterday had
@@ -43,8 +47,14 @@ export const d5DeliveryStoppedRule: RuleDefinition = {
   },
 
   async evaluate(ctx: RuleEvalContext): Promise<RuleConditionResult[]> {
-    const nearZeroThreshold = ctx.resolveThreshold('d5_near_zero_impressions', 2);
-    const meaningfulThreshold = ctx.resolveThreshold('d5_meaningful_impressions', 10);
+    const nearZeroThreshold = ctx.resolveThreshold(
+      'd5_near_zero_impressions',
+      2,
+    );
+    const meaningfulThreshold = ctx.resolveThreshold(
+      'd5_meaningful_impressions',
+      10,
+    );
     const clearThreshold = defaultClearThresholdForLowMetric(nearZeroThreshold);
 
     const windowEnd = addDaysISO(ctx.evaluationDate, -2); // T-2, per the settled-data convention
@@ -53,22 +63,42 @@ export const d5DeliveryStoppedRule: RuleDefinition = {
 
     // getEnabledCampaignsWithDailyMetrics already filters to state='ENABLED',
     // which IS the "not paused" check — no separate query needed.
-    const campaigns = await ctx.campaignMetrics.getEnabledCampaignsWithDailyMetrics(
-      ctx.clientId,
-      baselineStart,
-      windowEnd,
-    );
+    const campaigns =
+      await ctx.campaignMetrics.getEnabledCampaignsWithDailyMetrics(
+        ctx.clientId,
+        baselineStart,
+        windowEnd,
+      );
 
     const results: RuleConditionResult[] = [];
     for (const c of campaigns) {
       const yesterday = c.dailyMetrics.find((d) => d.date === windowEnd);
       const impressionsYesterday = yesterday?.impressions ?? 0;
 
-      const baselineDays = c.dailyMetrics.filter((d) => d.date >= baselineStart && d.date <= baselineEnd);
-      const daysMeetingBar = baselineDays.filter((d) => d.impressions >= meaningfulThreshold).length;
+      const baselineDays = c.dailyMetrics.filter(
+        (d) => d.date >= baselineStart && d.date <= baselineEnd,
+      );
+      const daysMeetingBar = baselineDays.filter(
+        (d) => d.impressions >= meaningfulThreshold,
+      ).length;
       const wasPreviouslyServing = daysMeetingBar >= MAJORITY_DAYS_REQUIRED;
 
       if (!wasPreviouslyServing) continue; // never really serving — "stopped" doesn't apply
+
+      // Average sales/spend across only the qualifying (bar-meeting) baseline
+      // days — a stopped-delivery day mixed into a plain 7-day average would
+      // understate what "normal" looked like. Surfaced here (not just
+      // impressions) so the task layer can derive a real lost-sales impact
+      // estimate instead of leaving D5 with no dollar figure at all.
+      const qualifyingDays = baselineDays.filter(
+        (d) => d.impressions >= meaningfulThreshold,
+      );
+      const baselineAvgDailySales =
+        qualifyingDays.reduce((sum, d) => sum + d.sales, 0) /
+        qualifyingDays.length;
+      const baselineAvgDailySpend =
+        qualifyingDays.reduce((sum, d) => sum + d.spend, 0) /
+        qualifyingDays.length;
 
       results.push({
         entityType: 'campaign',
@@ -85,7 +115,10 @@ export const d5DeliveryStoppedRule: RuleDefinition = {
           meaningfulImpressionsThreshold: meaningfulThreshold,
           nearZeroThreshold,
           campaignState: 'ENABLED',
-          budgetStatus: 'unknown — not synced (see rule comment for what was checked)',
+          budgetStatus:
+            'unknown — not synced (see rule comment for what was checked)',
+          baselineAvgDailySales,
+          baselineAvgDailySpend,
         },
       });
     }

@@ -45,8 +45,6 @@ func nullIfOverflowsNumeric84(v float64) *float64 {
 }
 
 const (
-	syncTypeAdsMetrics = "ads_metrics"
-
 	phase1Concurrency = 5  // max concurrent report requests in Phase 1
 	phase2Concurrency = 10 // max concurrent poll checks per round
 	pollInterval      = 5 * time.Minute
@@ -110,25 +108,39 @@ func NewMetricsOrchestrator(clientID, clientSecret string, encryptionKey []byte,
 	}
 }
 
-// SyncMetrics is the single entry point for all metrics syncs.
-// startDate/endDate are "YYYY-MM-DD". Region handling is internal.
+// SyncMetrics is the single entry point for all Sponsored Products report
+// syncs — campaigns, search term, and targeting alike. reportType selects
+// which one via reportTypeRegistry; startDate/endDate are "YYYY-MM-DD".
+// Region handling is internal.
 //
 // Call patterns — same function, different ranges chosen by the caller:
 //
-//	Initial 30-day backfill (today, manual):   SyncMetrics(accounts, today-30, today)
-//	Today refresh (future, every 2-4 h):       SyncMetrics(accounts, today, today)
-//	Daily catch-up for attribution drift:       SyncMetrics(accounts, today-7, today)
-//	Ad-hoc re-sync of any specific range:       SyncMetrics(accounts, anyStart, anyEnd)
+//	Initial 30/60-day backfill (today, manual): SyncMetrics(accounts, rt, today-N, today)
+//	Today refresh (future, every 2-4 h):        SyncMetrics(accounts, rt, today, today)
+//	Daily catch-up for attribution drift:       SyncMetrics(accounts, rt, today-14, today)
+//	Ad-hoc re-sync of any specific range:       SyncMetrics(accounts, rt, anyStart, anyEnd)
+//
+// Every call re-requests and overwrites its full range — attributed sales
+// restate as conversions land late, so a narrow "only sync what's missing"
+// range would silently miss those corrections. Idempotent: re-running for
+// the same range upserts in place (see each report type's Upsert* writer
+// method), it never duplicates rows.
 //
 // TODO: Temporal will call this on schedules — e.g. every 2-4 h with a 1-day
-// range for freshness, and once daily with a 7-day range for attribution corrections.
+// range for freshness, and once daily with a 14-day range for attribution corrections.
 func (o *MetricsOrchestrator) SyncMetrics(
 	ctx context.Context,
 	accounts []db.AdsAccount,
+	reportType string,
 	startDate, endDate string,
 ) (*MetricsResult, error) {
+	cfg, err := reportTypeConfigFor(reportType)
+	if err != nil {
+		return nil, err
+	}
+
 	result := &MetricsResult{ByRegion: make(map[string]regionMetricsResult)}
-	o.tokenManagers = buildTokenManagers(ctx, o.writer, o.clientID, o.clientSecret, o.encryptionKey, "[metrics]")
+	o.tokenManagers = buildTokenManagers(ctx, o.writer, o.clientID, o.clientSecret, o.encryptionKey, "["+reportType+"]")
 
 	// ── Phase 1: submit report requests for every account concurrently ────────
 	type phase1Out struct {
@@ -163,7 +175,7 @@ func (o *MetricsOrchestrator) SyncMetrics(
 			}
 
 			// Check for an existing non-terminal request (from a previous crashed run)
-			_, existingReportID, found, err := o.writer.FindActiveReportRequest(ctx, a.ID, startDate, endDate)
+			_, existingReportID, found, err := o.writer.FindActiveReportRequest(ctx, a.ID, reportType, startDate, endDate)
 			if err != nil {
 				out.err = fmt.Errorf("find existing request: %w", err)
 				outCh <- out
@@ -191,7 +203,7 @@ func (o *MetricsOrchestrator) SyncMetrics(
 			}
 
 			// Create sync_log entry for this account
-			logID, err := o.writer.CreateAccountSyncLog(ctx, syncTypeAdsMetrics, a.ID)
+			logID, err := o.writer.CreateAccountSyncLog(ctx, cfg.syncType, a.ID)
 			if err != nil {
 				out.err = fmt.Errorf("create sync log: %w", err)
 				outCh <- out
@@ -204,7 +216,7 @@ func (o *MetricsOrchestrator) SyncMetrics(
 			}
 
 			// Submit the report request to Amazon
-			reportID, err := o.apiClient.RequestReport(ctx, token, baseURL, a.ProfileID, startDate, endDate)
+			reportID, err := o.apiClient.RequestReport(ctx, token, baseURL, a.ProfileID, cfg.ReportRequestConfig, startDate, endDate)
 			if err != nil {
 				if isUnauthorized(err) {
 					_ = o.writer.CompleteSyncUnauthorized(ctx, logID, 0, err.Error())
@@ -220,6 +232,7 @@ func (o *MetricsOrchestrator) SyncMetrics(
 			if _, err := o.writer.InsertReportRequest(ctx, db.ReportRequestInsert{
 				AmazonAdsAccountID: a.ID,
 				SyncLogID:          logID,
+				ReportType:         reportType,
 				Region:             a.Region,
 				ReportID:           reportID,
 				StartDate:          startDate,
@@ -413,8 +426,10 @@ func (o *MetricsOrchestrator) pollPendingReports(ctx context.Context, deadline t
 	return nil
 }
 
-// processCompleted downloads the report, parses it, and writes rows to
-// PostgreSQL and ClickHouse. Returns the number of daily metric rows written.
+// processCompleted downloads the report and hands the parsed records off to
+// this row's report-type config for parsing + storage — the download step is
+// shared; what happens to the records afterward is entirely report-type
+// specific (see reportTypeRegistry). Returns the number of rows written.
 func (o *MetricsOrchestrator) processCompleted(
 	ctx context.Context,
 	row db.PendingReportRequest,
@@ -425,6 +440,23 @@ func (o *MetricsOrchestrator) processCompleted(
 		return 0, fmt.Errorf("download report: %w", err)
 	}
 
+	cfg, err := reportTypeConfigFor(row.ReportType)
+	if err != nil {
+		return 0, err
+	}
+
+	return cfg.process(ctx, o, row, records)
+}
+
+// processCampaignReport parses one account's downloaded spCampaigns records
+// and writes rows to PostgreSQL and ClickHouse. Returns the number of daily
+// metric rows written.
+func processCampaignReport(
+	ctx context.Context,
+	o *MetricsOrchestrator,
+	row db.PendingReportRequest,
+	records []map[string]json.RawMessage,
+) (int, error) {
 	campaignMap, err := o.writer.FetchCampaignUUIDs(ctx, row.AmazonAdsAccountID)
 	if err != nil {
 		return 0, fmt.Errorf("fetch campaign uuids: %w", err)
@@ -521,6 +553,18 @@ func (o *MetricsOrchestrator) processCompleted(
 }
 
 // ── JSON extraction helpers ───────────────────────────────────────────────────
+
+// jsonStringOptional returns "" instead of an error when the key is missing,
+// null, or empty — for fields that are legitimately absent on some rows
+// (e.g. keywordId on an auto-targeting search term, matchType on a product
+// target), as opposed to jsonString's required-field semantics.
+func jsonStringOptional(m map[string]json.RawMessage, key string) string {
+	s, err := jsonString(m, key)
+	if err != nil {
+		return ""
+	}
+	return s
+}
 
 func jsonString(m map[string]json.RawMessage, key string) (string, error) {
 	v, ok := m[key]

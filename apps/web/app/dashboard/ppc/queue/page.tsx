@@ -1,5 +1,5 @@
-import { PlaceholderPage } from "../../_components/PlaceholderPage";
+import { QueueView } from "../_components/queue/QueueView";
 
 export default function PpcTaskQueuePage() {
-  return <PlaceholderPage label="Task Queue" />;
+  return <QueueView />;
 }

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."sync_type" ADD VALUE 'entity_snapshots';

@@ -9,6 +9,11 @@ export interface DailyMetricRow {
 export interface CampaignWithDailyMetrics {
   campaignId: string; // Amazon's campaign id — used as the rule's entityId
   campaignName: string | null;
+  // Optional: only D1 reads this today (the task layer's budget-change
+  // action needs a real current value to act on). Optional, not required,
+  // so existing rule tests that construct this shape by hand don't need
+  // updating just because one field none of them use gained a home.
+  budget?: number | null;
   dailyMetrics: DailyMetricRow[];
 }
 
@@ -24,7 +29,11 @@ export interface WindowAggregate {
   acos: number | null;
 }
 
-export function aggregateWindow(rows: DailyMetricRow[], start: string, end: string): WindowAggregate {
+export function aggregateWindow(
+  rows: DailyMetricRow[],
+  start: string,
+  end: string,
+): WindowAggregate {
   let spend = 0;
   let sales = 0;
   let clicks = 0;
@@ -37,7 +46,13 @@ export function aggregateWindow(rows: DailyMetricRow[], start: string, end: stri
       impressions += r.impressions;
     }
   }
-  return { spend, sales, clicks, impressions, acos: sales > 0 ? (spend / sales) * 100 : null };
+  return {
+    spend,
+    sales,
+    clicks,
+    impressions,
+    acos: sales > 0 ? (spend / sales) * 100 : null,
+  };
 }
 
 export function addDaysISO(iso: string, days: number): string {

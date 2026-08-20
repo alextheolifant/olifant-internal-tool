@@ -1,5 +1,9 @@
 import { addDaysISO, aggregateWindow } from './campaign-window';
-import type { RuleConditionResult, RuleDefinition, RuleEvalContext } from './types';
+import type {
+  RuleConditionResult,
+  RuleDefinition,
+  RuleEvalContext,
+} from './types';
 
 const TRAILING_DAYS = 30;
 
@@ -46,11 +50,12 @@ export const d1OutOfBudgetProfitableRule: RuleDefinition = {
     const windowEnd = addDaysISO(ctx.evaluationDate, -2); // T-2
     const windowStart = addDaysISO(windowEnd, -(TRAILING_DAYS - 1));
 
-    const campaigns = await ctx.campaignMetrics.getEnabledCampaignsWithDailyMetrics(
-      ctx.clientId,
-      windowStart,
-      windowEnd,
-    );
+    const campaigns =
+      await ctx.campaignMetrics.getEnabledCampaignsWithDailyMetrics(
+        ctx.clientId,
+        windowStart,
+        windowEnd,
+      );
 
     const results: RuleConditionResult[] = [];
     for (const c of campaigns) {
@@ -68,6 +73,12 @@ export const d1OutOfBudgetProfitableRule: RuleDefinition = {
         holdsAtClear: cappedYesterday && isProfitable,
         evidence: {
           campaignName: c.campaignName,
+          // The campaign's currently-synced daily budget — real data (from
+          // campaigns.budget), surfaced here so the task layer's suggested
+          // budget increase has something real to compute from whenever the
+          // gate above closes. Not itself the missing signal — that's still
+          // budgetCappedSignal below.
+          currentBudget: c.budget ?? null,
           trailing30dAcos: trailing.acos,
           trailing30dSpend: trailing.spend,
           be: ctx.be.value,
@@ -75,7 +86,8 @@ export const d1OutOfBudgetProfitableRule: RuleDefinition = {
           isProfitable,
           windowStart,
           windowEnd,
-          budgetCappedSignal: 'unavailable — not synced (see rule comment for what was checked)',
+          budgetCappedSignal:
+            'unavailable — not synced (see rule comment for what was checked)',
           // Amazon's own missed-sales estimate isn't synced either — same
           // "report the gap" instruction applies; nothing fabricated here.
           missedSalesEstimate: 'unavailable — not synced',

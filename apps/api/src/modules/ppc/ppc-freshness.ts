@@ -18,7 +18,11 @@ export function classifyFreshness(lastSyncedAt: Date | null): ClientFreshness {
 
   const hoursSince = (Date.now() - lastSyncedAt.getTime()) / (60 * 60 * 1000);
   const level: FreshnessLevel =
-    hoursSince <= FRESH_HOURS ? 'on_target' : hoursSince <= STALE_HOURS ? 'watch' : 'act_now';
+    hoursSince <= FRESH_HOURS
+      ? 'on_target'
+      : hoursSince <= STALE_HOURS
+        ? 'watch'
+        : 'act_now';
 
   return { lastSyncedAt: lastSyncedAt.toISOString(), level };
 }

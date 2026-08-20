@@ -1,0 +1,1 @@
+ALTER TABLE "tasks" ADD COLUMN "band" varchar(5) NOT NULL;

@@ -127,7 +127,11 @@ export class MetricsService {
 
     const cacheKey = `metrics:clients:v1:${from}:${to}:${mkt ?? 'ALL'}`;
     const cached = await this.redis.get(cacheKey);
-    if (cached) return JSON.parse(cached);
+    // Trusts the cache: whatever this wrote is what this reads back, so
+    // the shape is asserted against build()'s own return type rather than
+    // left as an unchecked `any` — no independent runtime validation here.
+    if (cached)
+      return JSON.parse(cached) as Awaited<ReturnType<typeof this.build>>;
 
     const result = await this.build(from, to, mkt);
     await this.redis.setex(cacheKey, 300, JSON.stringify(result));

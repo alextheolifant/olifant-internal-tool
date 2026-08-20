@@ -111,3 +111,68 @@ export const marketplaceDisplay: Record<string, string> = {
   AE: "AE", SA: "SA",
   JP: "JP", AU: "AU",
 };
+
+// ── Task queue: type + status treatments ─────────────────────────────────────
+// Config objects, not inline conditionals — new task types and statuses land
+// as each W-rule ships, and adding one should be a single entry here.
+//
+// TOKEN REUSE: every value below maps onto a token already defined above,
+// with ONE exception. Placement's purple has no existing equivalent — there
+// is no purple anywhere in this app or in globals.css — so it's the only new
+// color introduced, declared here rather than inline.
+export const taskTypePurple = "text-violet-700" as const;
+
+// Colored word (not a chip), per the design brief.
+export const taskTypeTokens: Record<string, { text: string; label: string }> = {
+  negation:       { text: healthTokens.act_now.text,   label: "Negation" },
+  bid_change:     { text: statusTokens.Onboarding.text, label: "Bid change" },
+  harvest_launch: { text: healthTokens.on_target.text, label: "Harvest" },
+  budget:         { text: healthTokens.watch.text,     label: "Budget" },
+  placement:      { text: taskTypePurple,              label: "Placement" },
+  pause:          { text: healthTokens.unknown.text,   label: "Pause" },
+};
+
+// Types the engine can emit that the brief's table doesn't assign a color to.
+// Rendered in the default ink treatment rather than silently falling back to
+// one of the six above, which would imply a category that wasn't intended.
+export const taskTypeFallback = { text: tableTokens.inkText, label: "" } as const;
+
+export function taskTypeToken(type: string): { text: string; label: string } {
+  const known = taskTypeTokens[type];
+  if (known) return known;
+  // Humanise the raw enum value so an unmapped type still reads properly.
+  return { text: taskTypeFallback.text, label: type.replace(/_/g, " ") };
+}
+
+// Status pills. "Verified" is the one inverted treatment — ink background
+// with the brand yellow as text, which tierTokens[1] already expresses.
+export const taskStatusTokens: Record<string, { bg: string; text: string; label: string }> = {
+  pending:       { bg: tierTokens[2].bg,           text: tierTokens[2].text,           label: "Pending review" },
+  approved:      { bg: statusTokens.Onboarding.bg, text: statusTokens.Onboarding.text, label: "Approved" },
+  blocked:       { bg: tierTokens[3].bg,           text: tierTokens[3].text,           label: "Blocked" },
+  executed:      { bg: healthTokens.on_target.bg,  text: healthTokens.on_target.text,  label: "Executed" },
+  verified:      { bg: tierTokens[1].bg,           text: tierTokens[1].text,           label: "Verified" },
+  verify_failed: { bg: healthTokens.act_now.bg,    text: healthTokens.act_now.text,    label: "Verify failed" },
+  dismissed:     { bg: tierTokens[3].bg,           text: tierTokens[3].text,           label: "Dismissed" },
+  expired:       { bg: tierTokens[3].bg,           text: tierTokens[3].text,           label: "Expired" },
+};
+
+export function taskStatusToken(status: string): { bg: string; text: string; label: string } {
+  return taskStatusTokens[status] ?? { bg: tierTokens[3].bg, text: tierTokens[3].text, label: status };
+}
+
+// The impact bar (Part 4). Yellow, matching the brand accent already used
+// for the tier-1 badge text.
+// brand (#ffd046) is the palette's gold/yellow accent — the closed @theme
+// block defines no yellow-400, so anything outside the listed families would
+// silently render as no colour at all.
+export const impactBarTokens = {
+  track:  "bg-neutral-150",
+  fill:   "bg-brand",
+  height: "h-1",
+} as const;
+
+// Only these statuses can be bulk-approved. Everything else is excluded from
+// selection entirely — see the state machine in the API's task-lifecycle.ts,
+// which is the authority; this mirrors its 'pending -> approved' edge.
+export const APPROVABLE_STATUSES = ["pending"] as const;

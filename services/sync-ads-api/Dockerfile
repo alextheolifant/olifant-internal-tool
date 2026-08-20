@@ -8,6 +8,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /sync-profiles ./cmd/s
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /sync-campaigns ./cmd/sync-campaigns
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /sync-metrics ./cmd/sync-metrics
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /retry-reports ./cmd/retry-reports
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /sync-snapshots ./cmd/sync-snapshots
 
 FROM gcr.io/distroless/static-debian12
 COPY --from=builder /worker /worker
@@ -15,4 +16,5 @@ COPY --from=builder /sync-profiles /sync-profiles
 COPY --from=builder /sync-campaigns /sync-campaigns
 COPY --from=builder /sync-metrics /sync-metrics
 COPY --from=builder /retry-reports /retry-reports
+COPY --from=builder /sync-snapshots /sync-snapshots
 ENTRYPOINT ["/worker"]

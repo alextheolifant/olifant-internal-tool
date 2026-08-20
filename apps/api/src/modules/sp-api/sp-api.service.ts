@@ -153,9 +153,9 @@ export class SpApiService {
    * exists per marketplace, so this collapses them back into "connected
    * regions" for display rather than making the UI reason about raw rows.
    */
-  async getConnectionStatus(clientId: string): Promise<
-    { region: string; marketplaces: string[]; connectedAt: Date }[]
-  > {
+  async getConnectionStatus(
+    clientId: string,
+  ): Promise<{ region: string; marketplaces: string[]; connectedAt: Date }[]> {
     const rows = await this.drizzle.db.query.amazonSpAccounts.findMany({
       where: and(
         eq(amazonSpAccounts.clientId, clientId),
@@ -321,10 +321,15 @@ export class SpApiService {
 
     try {
       const body = JSON.parse(rawBody) as MarketplaceParticipationsResponse;
-      const knownIds = KNOWN_RETAIL_MARKETPLACE_IDS[region] ?? new Set<string>();
-      const participating = body.payload.filter((p) => p.participation.isParticipating);
+      const knownIds =
+        KNOWN_RETAIL_MARKETPLACE_IDS[region] ?? new Set<string>();
+      const participating = body.payload.filter(
+        (p) => p.participation.isParticipating,
+      );
 
-      const nonRetail = participating.filter((p) => !knownIds.has(p.marketplace.id));
+      const nonRetail = participating.filter(
+        (p) => !knownIds.has(p.marketplace.id),
+      );
       if (nonRetail.length > 0) {
         this.logger.warn(
           `dropped ${nonRetail.length} non-retail marketplace(s) from participations: ${nonRetail

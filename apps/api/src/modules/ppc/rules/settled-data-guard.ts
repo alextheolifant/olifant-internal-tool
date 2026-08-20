@@ -58,5 +58,8 @@ export function checkSettledData(
   }
   if (total === 0) return { isSettled: true, recentClickShare: 0 };
   const recentClickShare = recent / total;
-  return { isSettled: recentClickShare < materialShareThreshold, recentClickShare };
+  return {
+    isSettled: recentClickShare < materialShareThreshold,
+    recentClickShare,
+  };
 }

@@ -10,13 +10,23 @@ import (
 	"strings"
 )
 
-// AttrWindow is the attribution window suffix used for sales/purchases column
-// names (e.g. "7d" → "sales7d", "purchases7d"). Change here to switch globally.
+// AttrWindow is the attribution window suffix used for the campaigns report's
+// sales/purchases column names (e.g. "7d" → "sales7d", "purchases7d").
+// Change here to switch globally. Search term / targeting reports use both
+// 7d and 14d windows — see AttrWindows below — since the brief requires both,
+// not just one.
 const AttrWindow = "7d"
 
-// reportColumns builds the column list dynamically from AttrWindow so the
-// attribution window is a one-line config change, not scattered literals.
-func reportColumns() []string {
+// AttrWindows is the pair of attribution windows the search term and
+// targeting reports both request (7d for recency, 14d for the fuller
+// attribution picture) — kept as a slice so both column-builders and any
+// future report type share one definition.
+var AttrWindows = []string{"7d", "14d"}
+
+// campaignReportColumns builds the spCampaigns column list dynamically from
+// AttrWindow so the attribution window is a one-line config change, not
+// scattered literals.
+func campaignReportColumns() []string {
 	return []string{
 		"campaignId",
 		"date",
@@ -28,6 +38,50 @@ func reportColumns() []string {
 		"costPerClick",
 		"clickThroughRate",
 	}
+}
+
+// searchTermReportColumns builds the spSearchTerm column list. Column names
+// are Claude's best-effort mapping from Amazon's documented v3 reporting
+// schema — NOT yet verified against a real downloaded report. Verify before
+// trusting the parser that reads these keys (see sync.processSearchTermReport).
+func searchTermReportColumns() []string {
+	cols := []string{
+		"date",
+		"campaignId",
+		"adGroupId",
+		"keywordId",
+		"searchTerm",
+		"matchType",
+		"impressions",
+		"clicks",
+		"cost",
+	}
+	for _, w := range AttrWindows {
+		cols = append(cols, "sales"+w, "purchases"+w, "unitsSoldClicks"+w)
+	}
+	return cols
+}
+
+// targetingReportColumns builds the spTargeting column list. Verified against
+// a real report's 400 error listing allowed columns: there is no "targetId"
+// field — Amazon reuses "keywordId" as the identifier for spTargeting rows
+// too (even for product-targeting expressions, not just keyword targets).
+func targetingReportColumns() []string {
+	cols := []string{
+		"date",
+		"campaignId",
+		"adGroupId",
+		"keywordId",
+		"targeting",
+		"matchType",
+		"impressions",
+		"clicks",
+		"cost",
+	}
+	for _, w := range AttrWindows {
+		cols = append(cols, "sales"+w, "purchases"+w, "unitsSoldClicks"+w)
+	}
+	return cols
 }
 
 // reportRequestBody is the JSON body for POST /reporting/reports.
@@ -57,18 +111,56 @@ type ReportResponse struct {
 	FailureReason string `json:"failureReason"`
 }
 
-// RequestReport submits an SP campaigns daily report for one profile and
-// returns Amazon's reportId. baseURL is resolved from the account's region.
-func (c *Client) RequestReport(ctx context.Context, accessToken, baseURL, profileID, startDate, endDate string) (string, error) {
+// ReportRequestConfig is the Sponsored-Products-only piece of a report type's
+// definition — everything RequestReport needs to build the API call. The
+// rest of a report type (parsing + storage) lives in the sync package's
+// report type registry; this struct is what that registry hands down here.
+type ReportRequestConfig struct {
+	ReportTypeID string
+	GroupBy      []string
+	Columns      []string
+	NameLabel    string // human label used in the report Name field sent to Amazon
+}
+
+// CampaignReportConfig, SearchTermReportConfig, and TargetingReportConfig are
+// the three Sponsored Products report types currently supported. Adding a
+// fourth (or SB/SD variants later) means adding one more of these plus a
+// matching entry in the sync package's report type registry — RequestReport
+// itself never changes.
+var (
+	CampaignReportConfig = ReportRequestConfig{
+		ReportTypeID: "spCampaigns",
+		GroupBy:      []string{"campaign"},
+		Columns:      campaignReportColumns(),
+		NameLabel:    "SP Campaigns Daily",
+	}
+	SearchTermReportConfig = ReportRequestConfig{
+		ReportTypeID: "spSearchTerm",
+		GroupBy:      []string{"searchTerm"},
+		Columns:      searchTermReportColumns(),
+		NameLabel:    "SP Search Term Daily",
+	}
+	TargetingReportConfig = ReportRequestConfig{
+		ReportTypeID: "spTargeting",
+		GroupBy:      []string{"targeting"},
+		Columns:      targetingReportColumns(),
+		NameLabel:    "SP Targeting Daily",
+	}
+)
+
+// RequestReport submits a Sponsored Products report of the given type for one
+// profile and returns Amazon's reportId. baseURL is resolved from the
+// account's region.
+func (c *Client) RequestReport(ctx context.Context, accessToken, baseURL, profileID string, cfg ReportRequestConfig, startDate, endDate string) (string, error) {
 	body := reportRequestBody{
-		Name:      fmt.Sprintf("SP Campaigns Daily - %s - %s", profileID, endDate),
+		Name:      fmt.Sprintf("%s - %s - %s", cfg.NameLabel, profileID, endDate),
 		StartDate: startDate,
 		EndDate:   endDate,
 		Configuration: reportConfig{
 			AdProduct:    "SPONSORED_PRODUCTS",
-			GroupBy:      []string{"campaign"},
-			Columns:      reportColumns(),
-			ReportTypeID: "spCampaigns",
+			GroupBy:      cfg.GroupBy,
+			Columns:      cfg.Columns,
+			ReportTypeID: cfg.ReportTypeID,
 			TimeUnit:     "DAILY",
 			Format:       "GZIP_JSON",
 		},

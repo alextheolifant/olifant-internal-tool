@@ -155,10 +155,15 @@ describe('AiService', () => {
         service as unknown as {
           formatContext(a: string, r: unknown, f: string, t: string): string;
         }
-      ).formatContext(accountId, buildMetricsFixture(), '2026-06-13', '2026-07-13');
+      ).formatContext(
+        accountId,
+        buildMetricsFixture(),
+        '2026-06-13',
+        '2026-07-13',
+      );
 
     it('renders the "all clients" snapshot with real metrics as numbers and pending metrics as explicit text', async () => {
-      const context = await call('all');
+      const context = call('all');
 
       expect(context).toContain(
         'Olifant Digital agency snapshot for 2026-06-13 to 2026-07-13 (2 clients)',
@@ -180,7 +185,7 @@ describe('AiService', () => {
     });
 
     it('renders a single-client snapshot scoped to just that client', async () => {
-      const context = await call('client-real');
+      const context = call('client-real');
 
       expect(context).toContain('Client: Ekster Inc (Olifant Digital account)');
       expect(context).toContain('Tier 1, status Active');
@@ -197,7 +202,7 @@ describe('AiService', () => {
     });
 
     it('returns a clear not-found message for an unknown client id instead of throwing or fabricating data', async () => {
-      const context = await call('client-does-not-exist');
+      const context = call('client-does-not-exist');
       expect(context).toBe(
         'No performance data found for the requested client in 2026-06-13 to 2026-07-13.',
       );
@@ -244,7 +249,10 @@ describe('AiService', () => {
     });
 
     it('recognizes an existing conversation and does not create a new one', async () => {
-      drizzle._mocks.findFirst.mockResolvedValue({ id: 'conv-1', userId: 'user-1' });
+      drizzle._mocks.findFirst.mockResolvedValue({
+        id: 'conv-1',
+        userId: 'user-1',
+      });
 
       const result = await service.resolveConversation('user-1', {
         accountId: 'all',
@@ -252,7 +260,10 @@ describe('AiService', () => {
         message: 'Hi',
       });
 
-      expect(result).toEqual({ conversationId: 'conv-1', isNewConversation: false });
+      expect(result).toEqual({
+        conversationId: 'conv-1',
+        isNewConversation: false,
+      });
       expect(drizzle._mocks.insert).not.toHaveBeenCalled();
     });
   });
@@ -261,16 +272,26 @@ describe('AiService', () => {
     it('emits history/metrics/context/reasoning steps in order, then delta and done', async () => {
       mockAnthropicStream.mockReturnValue({
         [Symbol.asyncIterator]: async function* () {
-          yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hi' } };
+          yield {
+            type: 'content_block_delta',
+            delta: { type: 'text_delta', text: 'Hi' },
+          };
         },
         finalMessage: jest.fn().mockResolvedValue({ usage: undefined }),
       });
 
       const events = await drain(
-        service.streamReply('conv-1', false, { accountId: 'all', message: 'Hi' }, undefined),
+        service.streamReply(
+          'conv-1',
+          false,
+          { accountId: 'all', message: 'Hi' },
+          undefined,
+        ),
       );
 
-      const stepIds = events.filter((e) => e.type === 'step').map((e: any) => `${e.id}:${e.status}`);
+      const stepIds = events
+        .filter((e) => e.type === 'step')
+        .map((e: any) => `${e.id}:${e.status}`);
       expect(stepIds).toEqual([
         'history:running',
         'history:complete',
@@ -286,9 +307,16 @@ describe('AiService', () => {
 
     it('skips the history step for a brand-new conversation', async () => {
       const events = await drain(
-        service.streamReply('conv-1', true, { accountId: 'all', message: 'Hi' }, undefined),
+        service.streamReply(
+          'conv-1',
+          true,
+          { accountId: 'all', message: 'Hi' },
+          undefined,
+        ),
       );
-      const stepIds = events.filter((e) => e.type === 'step').map((e: any) => e.id);
+      const stepIds = events
+        .filter((e) => e.type === 'step')
+        .map((e: any) => e.id);
       expect(stepIds).not.toContain('history');
     });
 
@@ -301,10 +329,16 @@ describe('AiService', () => {
       ]);
 
       await drain(
-        service.streamReply('conv-1', false, { accountId: 'all', message: 'And ROAS?' }, undefined),
+        service.streamReply(
+          'conv-1',
+          false,
+          { accountId: 'all', message: 'And ROAS?' },
+          undefined,
+        ),
       );
 
-      const sentContent = mockAnthropicStream.mock.calls[0][0].messages[0].content;
+      const sentContent =
+        mockAnthropicStream.mock.calls[0][0].messages[0].content;
       expect(sentContent).toContain('LIVE DATA:');
       expect(sentContent).toContain(
         "User: What is our ACoS?\nCo-pilot: It's 34.3%.",
@@ -318,7 +352,14 @@ describe('AiService', () => {
       );
 
       await expect(
-        drain(service.streamReply('conv-1', true, { accountId: 'all', message: 'Hi' }, undefined)),
+        drain(
+          service.streamReply(
+            'conv-1',
+            true,
+            { accountId: 'all', message: 'Hi' },
+            undefined,
+          ),
+        ),
       ).rejects.toThrow(ServiceUnavailableException);
     });
   });

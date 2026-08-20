@@ -1,6 +1,7 @@
 import { TodayService } from './today.service';
 import { DrizzleService } from '../../db/drizzle.service';
 import type { RuleDefinition } from './rules/types';
+import type { SavingsService } from './monitor/savings.service';
 
 // TodayService imports REGISTERED_RULES directly — mock the registry so this
 // test can exercise a synthetic G-band rule without needing a real,
@@ -37,6 +38,25 @@ function buildDrizzleMock(rows: unknown[]) {
   return { db: { select } };
 }
 
+// These tests cover the exceptions/stat-card plumbing, not the savings
+// counter (that has its own coverage in monitor/) — a stub with no concluded
+// monitors keeps verifiedSavings at its "not measured yet" null, which is
+// what every assertion below already expects.
+function buildSavingsStub() {
+  return {
+    getSummary: async () => ({
+      agencyVerifiedSavingsMonthly: 0,
+      byClient: [],
+      concludedWithoutSavings: 0,
+      noConcludedMonitors: true,
+    }),
+    getForClient: async () => ({
+      verifiedSavingsMonthly: 0,
+      noConcludedMonitors: true,
+    }),
+  } as unknown as SavingsService;
+}
+
 describe('TodayService', () => {
   it('includes both D-band and G-band candidates in the exceptions list, with distinct guardColor', async () => {
     const rows = [
@@ -44,7 +64,10 @@ describe('TodayService', () => {
       { ruleId: 'G9', clientId: 'c1', clientName: 'Acme', evidence: {} },
     ];
     const drizzle = buildDrizzleMock(rows);
-    const service = new TodayService(drizzle as unknown as DrizzleService);
+    const service = new TodayService(
+      drizzle as unknown as DrizzleService,
+      buildSavingsStub(),
+    );
 
     const result = await service.getToday('2026-08-07');
 
@@ -62,7 +85,10 @@ describe('TodayService', () => {
       { ruleId: 'G9', clientId: 'c1', clientName: 'Acme', evidence: {} },
     ];
     const drizzle = buildDrizzleMock(rows);
-    const service = new TodayService(drizzle as unknown as DrizzleService);
+    const service = new TodayService(
+      drizzle as unknown as DrizzleService,
+      buildSavingsStub(),
+    );
 
     const result = await service.getToday('2026-08-07');
 
@@ -71,9 +97,19 @@ describe('TodayService', () => {
   });
 
   it('ignores candidates for unrecognized or non-D/G-band rules', async () => {
-    const rows = [{ ruleId: 'does-not-exist', clientId: 'c1', clientName: 'Acme', evidence: {} }];
+    const rows = [
+      {
+        ruleId: 'does-not-exist',
+        clientId: 'c1',
+        clientName: 'Acme',
+        evidence: {},
+      },
+    ];
     const drizzle = buildDrizzleMock(rows);
-    const service = new TodayService(drizzle as unknown as DrizzleService);
+    const service = new TodayService(
+      drizzle as unknown as DrizzleService,
+      buildSavingsStub(),
+    );
 
     const result = await service.getToday('2026-08-07');
 
@@ -84,13 +120,45 @@ describe('TodayService', () => {
     expect(result.statCards.openTasksCount).toBe(1);
   });
 
-  it('always returns null (not 0) for the two stat cards that need unbuilt phases', async () => {
+  it('reports verifiedSavings as null-and-pending (not 0) while no monitor has concluded', async () => {
     const drizzle = buildDrizzleMock([]);
-    const service = new TodayService(drizzle as unknown as DrizzleService);
+    const service = new TodayService(
+      drizzle as unknown as DrizzleService,
+      buildSavingsStub(),
+    );
 
     const result = await service.getToday('2026-08-07');
 
+    // The distinction the card renders on: "nothing has finished its 30-day
+    // window yet" is not the same claim as "we measured and saved $0".
     expect(result.statCards.verifiedSavings).toBeNull();
+    expect(result.statCards.verifiedSavingsPending).toBe(true);
+    // dollarsAtStake still needs task-level impact scoring — genuinely unbuilt.
     expect(result.statCards.dollarsAtStake).toBeNull();
+  });
+
+  it('reports a real verifiedSavings figure once monitors have concluded', async () => {
+    const drizzle = buildDrizzleMock([]);
+    const savings = {
+      getSummary: async () => ({
+        agencyVerifiedSavingsMonthly: 137.5,
+        byClient: [],
+        concludedWithoutSavings: 2,
+        noConcludedMonitors: false,
+      }),
+      getForClient: async () => ({
+        verifiedSavingsMonthly: 137.5,
+        noConcludedMonitors: false,
+      }),
+    } as unknown as SavingsService;
+    const service = new TodayService(
+      drizzle as unknown as DrizzleService,
+      savings,
+    );
+
+    const result = await service.getToday('2026-08-07');
+
+    expect(result.statCards.verifiedSavings).toBe(137.5);
+    expect(result.statCards.verifiedSavingsPending).toBe(false);
   });
 });

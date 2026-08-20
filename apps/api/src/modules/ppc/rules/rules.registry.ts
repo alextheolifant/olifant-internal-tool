@@ -1,6 +1,8 @@
 import { d1OutOfBudgetProfitableRule } from './d1-out-of-budget-profitable.rule';
+import { d3UnintendedPauseRule } from './d3-unintended-pause.rule';
 import { d4AcosBlowoutRule } from './d4-acos-blowout.rule';
 import { d5DeliveryStoppedRule } from './d5-delivery-stopped.rule';
+import { w1ZeroSaleNegationRule } from './w1-zero-sale-negation.rule';
 import type { RuleDefinition } from './types';
 
 // Adding a new rule is just pushing it here — nothing else in the runner
@@ -9,8 +11,6 @@ import type { RuleDefinition } from './types';
 // Explicitly NOT registered, blocked pending data that doesn't exist yet:
 // - D2 (spend spike, zero sales): needs target-level spend/orders — only
 //   campaign-level is synced.
-// - D3: needs entity state history + task-log cross-reference, neither
-//   exists yet.
 // - D6 (CVR collapse): needs ASIN-level sessions/unit-session-rate from the
 //   SP-API Sales & Traffic report. Confirmed the Go sync's parser
 //   (services/sync-sp-api/internal/amazon/sales.go) only defines/reads
@@ -23,6 +23,8 @@ import type { RuleDefinition } from './types';
 // - G1-G4: blocked on SP-API inventory for most clients.
 export const REGISTERED_RULES: RuleDefinition[] = [
   d1OutOfBudgetProfitableRule,
+  d3UnintendedPauseRule,
   d4AcosBlowoutRule,
   d5DeliveryStoppedRule,
+  w1ZeroSaleNegationRule,
 ];

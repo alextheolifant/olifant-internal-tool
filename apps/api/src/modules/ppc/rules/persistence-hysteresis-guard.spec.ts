@@ -63,7 +63,10 @@ describe('applyPersistenceAndHysteresis', () => {
   });
 
   it('hysteresis: once active, stays active (and keeps emitting) while above the looser CLEAR bar, even if below ENTER', () => {
-    const active: { isActive: boolean; streakCount: number } = { isActive: true, streakCount: 0 };
+    const active: { isActive: boolean; streakCount: number } = {
+      isActive: true,
+      streakCount: 0,
+    };
     const decision = applyPersistenceAndHysteresis({
       band: 'D',
       holdsAtEnter: false, // dropped below enter...
@@ -92,19 +95,39 @@ describe('applyPersistenceAndHysteresis', () => {
     // (still emitting, so the eventual task stays alive) through the dips.
     let state: { isActive: boolean; streakCount: number } | null = null;
 
-    const d1 = applyPersistenceAndHysteresis({ band: 'D', holdsAtEnter: true, holdsAtClear: true, prior: state });
+    const d1 = applyPersistenceAndHysteresis({
+      band: 'D',
+      holdsAtEnter: true,
+      holdsAtClear: true,
+      prior: state,
+    });
     state = d1.nextState;
     expect(d1.shouldEmit).toBe(true);
 
-    const d2 = applyPersistenceAndHysteresis({ band: 'D', holdsAtEnter: false, holdsAtClear: true, prior: state });
+    const d2 = applyPersistenceAndHysteresis({
+      band: 'D',
+      holdsAtEnter: false,
+      holdsAtClear: true,
+      prior: state,
+    });
     state = d2.nextState;
     expect(d2.shouldEmit).toBe(true); // still active — no flicker
 
-    const d3 = applyPersistenceAndHysteresis({ band: 'D', holdsAtEnter: false, holdsAtClear: true, prior: state });
+    const d3 = applyPersistenceAndHysteresis({
+      band: 'D',
+      holdsAtEnter: false,
+      holdsAtClear: true,
+      prior: state,
+    });
     state = d3.nextState;
     expect(d3.shouldEmit).toBe(true); // still active — no flicker
 
-    const d4 = applyPersistenceAndHysteresis({ band: 'D', holdsAtEnter: false, holdsAtClear: false, prior: state });
+    const d4 = applyPersistenceAndHysteresis({
+      band: 'D',
+      holdsAtEnter: false,
+      holdsAtClear: false,
+      prior: state,
+    });
     expect(d4.shouldEmit).toBe(false); // genuinely cleared
     expect(d4.nextState.isActive).toBe(false);
   });

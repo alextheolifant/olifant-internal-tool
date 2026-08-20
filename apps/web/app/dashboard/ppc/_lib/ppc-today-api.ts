@@ -19,7 +19,11 @@ export interface PpcTodayException {
 export interface PpcTodayResponse {
   evaluationDate: string;
   statCards: {
+    // Real, from concluded monitors. Null only while nothing has concluded
+    // its 30-day window yet — verifiedSavingsPending disambiguates that
+    // from a measured $0.
     verifiedSavings: number | null;
+    verifiedSavingsPending: boolean;
     openTasksCount: number;
     dollarsAtStake: number | null;
     exceptionsToday: number;

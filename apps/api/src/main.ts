@@ -9,4 +9,11 @@ async function bootstrap() {
   );
   await app.listen(process.env.PORT ?? 3001);
 }
-bootstrap();
+bootstrap().catch((err) => {
+  // Without this, a startup failure (bad DATABASE_URL, port in use, etc.)
+  // surfaces only as an unhandled-rejection warning with no clear signal
+  // that the app never came up — this logs it plainly and exits non-zero
+  // so an orchestrator (docker/systemd) sees the failure.
+  console.error('Fatal error during bootstrap:', err);
+  process.exit(1);
+});

@@ -1,7 +1,11 @@
 import { addDaysISO, aggregateWindow } from './campaign-window';
 import { defaultClearThreshold } from './thresholds';
 import { checkSettledData } from './settled-data-guard';
-import type { RuleConditionResult, RuleDefinition, RuleEvalContext } from './types';
+import type {
+  RuleConditionResult,
+  RuleDefinition,
+  RuleEvalContext,
+} from './types';
 
 const TRAILING_DAYS = 7;
 const REFERENCE_WINDOW_DAYS = 60; // for the settled-data click-maturity check
@@ -33,15 +37,20 @@ export const d4AcosBlowoutRule: RuleDefinition = {
     const trailingStart = addDaysISO(windowEnd, -(TRAILING_DAYS - 1));
     const referenceStart = addDaysISO(windowEnd, -(REFERENCE_WINDOW_DAYS - 1));
 
-    const campaigns = await ctx.campaignMetrics.getEnabledCampaignsWithDailyMetrics(
-      ctx.clientId,
-      referenceStart,
-      windowEnd,
-    );
+    const campaigns =
+      await ctx.campaignMetrics.getEnabledCampaignsWithDailyMetrics(
+        ctx.clientId,
+        referenceStart,
+        windowEnd,
+      );
 
     const results: RuleConditionResult[] = [];
     for (const c of campaigns) {
-      const trailing = aggregateWindow(c.dailyMetrics, trailingStart, windowEnd);
+      const trailing = aggregateWindow(
+        c.dailyMetrics,
+        trailingStart,
+        windowEnd,
+      );
       if (trailing.spend < minSpend || trailing.acos === null) continue;
 
       const settled = checkSettledData(c.dailyMetrics, ctx.evaluationDate);
