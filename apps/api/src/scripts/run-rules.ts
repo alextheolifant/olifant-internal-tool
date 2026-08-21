@@ -16,7 +16,7 @@
 // in-service freshness guard a defensive backstop rather than the only line
 // of defense against stale data.
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../app.module';
+import { CliModule } from './cli.module';
 import { RuleRunnerService } from '../modules/ppc/rules/rule-runner.service';
 
 async function main() {
@@ -25,7 +25,7 @@ async function main() {
     ?.split('=')[1];
   const date = dateArg ?? new Date().toISOString().slice(0, 10);
 
-  const app = await NestFactory.createApplicationContext(AppModule, {
+  const app = await NestFactory.createApplicationContext(CliModule, {
     logger: ['log', 'warn', 'error'],
   });
   try {

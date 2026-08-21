@@ -13,11 +13,11 @@
 // TaskPromotionService.promoteNewCandidates() directly instead of shelling
 // out to this script.
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../app.module';
+import { CliModule } from './cli.module';
 import { TaskPromotionService } from '../modules/ppc/tasks/task-promotion.service';
 
 async function main() {
-  const app = await NestFactory.createApplicationContext(AppModule, {
+  const app = await NestFactory.createApplicationContext(CliModule, {
     logger: ['log', 'warn', 'error'],
   });
   try {
