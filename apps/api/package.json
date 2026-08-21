@@ -12,6 +12,8 @@
     "db:studio": "drizzle-kit studio",
     "detect:anomalies": "ts-node -r tsconfig-paths/register src/scripts/detect-anomalies.ts",
     "migrate:ads-token": "ts-node -r tsconfig-paths/register src/scripts/migrate-ads-refresh-token.ts",
+    "rules:run": "ts-node -r tsconfig-paths/register src/scripts/run-rules.ts",
+    "tasks:promote": "ts-node -r tsconfig-paths/register src/scripts/promote-tasks.ts",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",

@@ -118,7 +118,7 @@ export class PpcClientsService {
     ] = await Promise.all([
       this.fetchConfigs(clientIds),
       this.fetchProducts(clientIds),
-      this.fetchFreshness(clientIds),
+      this.getFreshnessByClient(clientIds),
       this.fetchSpendMonthToDate(clientIds, marketplace),
       this.savings.getSummary(),
     ]);
@@ -260,8 +260,10 @@ export class PpcClientsService {
   }
 
   // Latest successful sync per client, across both the Ads API and SP-API
-  // account paths — whichever synced most recently wins.
-  private async fetchFreshness(
+  // account paths — whichever synced most recently wins. Public: also used
+  // by RuleRunnerService as a per-client staleness guard before evaluating
+  // rules against that client's data — see run-rules.ts.
+  async getFreshnessByClient(
     clientIds: string[],
   ): Promise<Map<string, ClientFreshness>> {
     if (clientIds.length === 0) return new Map();
