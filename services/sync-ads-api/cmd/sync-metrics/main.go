@@ -46,9 +46,15 @@ func main() {
 	}
 	defer writer.Close()
 
-	chWriter, err := db.NewCHWriter(requireEnv("CLICKHOUSE_URL"))
-	if err != nil {
-		log.Fatalf("init clickhouse writer: %v", err)
+	// Only the campaigns report writes to ClickHouse (see
+	// processCampaignReport) — searchTerm/targeting never touch chWriter, so
+	// don't require CLICKHOUSE_URL for runs that don't need it.
+	var chWriter *db.CHWriter
+	if *reportType == "campaigns" {
+		chWriter, err = db.NewCHWriter(requireEnv("CLICKHOUSE_URL"))
+		if err != nil {
+			log.Fatalf("init clickhouse writer: %v", err)
+		}
 	}
 
 	accounts, err := writer.FetchActiveAccounts(ctx)
