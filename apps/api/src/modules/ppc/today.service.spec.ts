@@ -30,10 +30,18 @@ jest.mock('./rules/rules.registry', () => ({
   },
 }));
 
-function buildDrizzleMock(rows: unknown[]) {
-  const where = jest.fn().mockResolvedValue(rows);
-  const innerJoin = jest.fn().mockReturnValue({ where });
-  const from = jest.fn().mockReturnValue({ innerJoin });
+// getToday now runs two queries in sequence: the task_candidates one (joined
+// to clients, feeds exceptions/exceptionsToday) and a separate, unjoined one
+// against tasks (feeds the real openTasksCount) — see today.service.ts.
+// mockReturnValueOnce twice on `from` gives each call its own shape/result.
+function buildDrizzleMock(candidateRows: unknown[], openTasksCount = 0) {
+  const candidatesWhere = jest.fn().mockResolvedValue(candidateRows);
+  const innerJoin = jest.fn().mockReturnValue({ where: candidatesWhere });
+  const tasksWhere = jest.fn().mockResolvedValue([{ openTasksCount }]);
+  const from = jest
+    .fn()
+    .mockReturnValueOnce({ innerJoin })
+    .mockReturnValueOnce({ where: tasksWhere });
   const select = jest.fn().mockReturnValue({ from });
   return { db: { select } };
 }
@@ -105,7 +113,7 @@ describe('TodayService', () => {
         evidence: {},
       },
     ];
-    const drizzle = buildDrizzleMock(rows);
+    const drizzle = buildDrizzleMock(rows, 4);
     const service = new TodayService(
       drizzle as unknown as DrizzleService,
       buildSavingsStub(),
@@ -115,9 +123,10 @@ describe('TodayService', () => {
 
     expect(result.exceptions).toHaveLength(0);
     expect(result.statCards.exceptionsToday).toBe(0);
-    // openTasksCount is still the raw row count — a stand-in per the API's
-    // own documented behavior, unaffected by the exceptions-list filtering.
-    expect(result.statCards.openTasksCount).toBe(1);
+    // openTasksCount is a real, separate query against tasks (OPEN_STATUSES)
+    // — independent of the task_candidates rows/exceptions-list filtering
+    // above, which is exactly what this asserts by giving it a different value.
+    expect(result.statCards.openTasksCount).toBe(4);
   });
 
   it('reports verifiedSavings as null-and-pending (not 0) while no monitor has concluded', async () => {

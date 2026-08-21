@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, gte, lt } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, lt } from 'drizzle-orm';
 import { DrizzleService } from '../../db/drizzle.service';
-import { clients, taskCandidates } from '../../db/schema';
+import { clients, taskCandidates, tasks } from '../../db/schema';
 import { SavingsService } from './monitor/savings.service';
 import { REGISTERED_RULES } from './rules/rules.registry';
 import type { RuleDefinition } from './rules/types';
+import { OPEN_STATUSES } from './tasks/task-lifecycle';
 
 // Same convention apps/web/app/dashboard/_lib/theme.ts's healthTokens uses —
 // not redefined here, just the same four string values, so the frontend can
@@ -36,8 +37,10 @@ export interface TodayResponse {
     // differently; verifiedSavingsPending distinguishes the two.
     verifiedSavings: number | null;
     verifiedSavingsPending: boolean;
-    // STAND-IN: the task layer (dedup/scoring/enqueue) doesn't exist yet —
-    // this is a raw task_candidates count, not deduplicated tasks.
+    // Real: count of tasks currently in an open status (OPEN_STATUSES —
+    // pending/approved/blocked), agency-wide or scoped to clientIdFilter.
+    // Deliberately NOT scoped to evaluationDate — an open task persists
+    // across days until it's resolved, unlike the exceptions list below.
     openTasksCount: number;
     // Needs task-level impact scoring (task layer) — explicitly unavailable.
     dollarsAtStake: null;
@@ -93,6 +96,13 @@ export class TodayService {
       .innerJoin(clients, eq(clients.id, taskCandidates.clientId))
       .where(and(...conditions));
 
+    const openTasksConditions = [inArray(tasks.status, OPEN_STATUSES)];
+    if (clientIdFilter) openTasksConditions.push(eq(tasks.clientId, clientIdFilter));
+    const [{ openTasksCount }] = await this.drizzle.db
+      .select({ openTasksCount: count() })
+      .from(tasks)
+      .where(and(...openTasksConditions));
+
     const exceptions: TodayException[] = [];
     let dBandCount = 0;
     for (const row of rows) {
@@ -134,7 +144,7 @@ export class TodayService {
           ? null
           : savings.verifiedSavingsMonthly,
         verifiedSavingsPending: savings.noConcludedMonitors,
-        openTasksCount: rows.length,
+        openTasksCount,
         dollarsAtStake: null,
         exceptionsToday: dBandCount,
       },

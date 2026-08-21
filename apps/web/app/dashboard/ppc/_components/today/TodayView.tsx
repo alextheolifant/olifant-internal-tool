@@ -102,7 +102,7 @@ export function TodayView() {
           value={statCards.openTasksCount}
           format={(n) => intfmt(n)}
           colorClassWhenAvailable="text-ink"
-          sub="raw candidate count — task layer pending"
+          sub="pending, approved, or blocked in the queue"
         />
         <StatTile
           label="$ at stake in queue"
